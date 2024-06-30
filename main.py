@@ -7,7 +7,7 @@ from dicom_preprocessing import (BLANK,
 from inference import ModelInference
 D = PreprocessingDICOM()
 A = AdjustImage()
-infer = ModelInference("convnext_dual_view.h5")
+infer = ModelInference("model")
 
 def dicom_preprocessing_options(option:str):
     assert option in list(vars(D).keys()), gr.Error("invalid option")
@@ -30,9 +30,9 @@ def images_adjustment_options(option:str):
 
     return adjust
 
-def readable_prediction(im1, im2):
-    pred = infer.inference_single(im1, im2)
-    result = np.argmax(pred)
+def readable_prediction(im1, im2, model_fold):
+    pred = infer.inference_single(im1, im2, fold=model_fold)
+    result = np.argmax(pred, axis=-1)
     result = [result + 1, pred[result]*100]
     # detailed probability distribution
     pred = [[f"BI-RADS {i+1}", pred[i]] for i in range(len(pred))]
@@ -66,21 +66,26 @@ with gr.Blocks() as demo:
         )
         with gr.Row():
             with gr.Column(variant='compact'):
-                image1 = gr.Image(value=BLANK, label="ipsilateral view 1", format="PNG", interactive=True,sources=[], height=512)
-                image2 = gr.Image(value=BLANK, label="ipsilateral view 2 ", format="PNG", interactive=True,sources=[], height=512)
+                image1 = gr.Image(value=BLANK, label="ipsilateral view 1", format="PNG", interactive=True, sources=[])
+                image2 = gr.Image(value=BLANK, label="ipsilateral view 2", format="PNG", interactive=True, sources=[])
             with gr.Column():
                 files_input = gr.Files(label="Input DICOM files (2 Ipsilateral view images)",
-                                     file_types=[".dicom", ".DICOM", '.dcm'],
-                                     type='filepath')
-                predict_btn = gr.Button("Predict", variant="primary")
-                files_input.change(D.process_dicom_files, inputs=files_input, outputs=[tmp_image1, tmp_image2])
-                tmp_image1.change(A.adjust_contrast_brightness, inputs=tmp_image1, outputs=image1)
-                tmp_image2.change(A.adjust_contrast_brightness, inputs=tmp_image2, outputs=image2)
+                                       file_types=[".dicom", ".DICOM", '.dcm'],
+                                       type='filepath')
 
-                with gr.Accordion("Prediction Result", open=True):
+                with gr.Accordion("BI-RADS Prediction", open=True):
+                    model_list = list(infer.models.keys())
+                    model_list.append('k-fold ensemble')
+                    model_choice = gr.Dropdown(model_list, label="select model", value="k-fold ensemble")
+
+                    predict_btn = gr.Button("Predict", variant="primary")
+                    files_input.change(D.process_dicom_files, inputs=files_input, outputs=[tmp_image1, tmp_image2])
+                    tmp_image1.change(A.adjust_contrast_brightness, inputs=tmp_image1, outputs=image1)
+                    tmp_image2.change(A.adjust_contrast_brightness, inputs=tmp_image2, outputs=image2)
+
                     default_text = 'Please click the "Predict" button to get BI-RADS prediction'
                     prediction_result = gr.Markdown(default_text)
-                    predict_btn.click(readable_prediction, inputs=[image1, image2], outputs=prediction_result)
+                    predict_btn.click(readable_prediction, inputs=[image1, image2, model_choice], outputs=prediction_result)
                     files_input.change(lambda: default_text, outputs=prediction_result)
 
                 with gr.Accordion("DICOM Preprocessing Options", open=True):

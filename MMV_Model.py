@@ -36,7 +36,7 @@ def get_dims_depth(variant=D.model_var):
     }
     return convnext_dims_depth_map[variant]
 
-@keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable("CustomLayers", name="custom_global_pooling")
 class GlobalPooling2D(keras.layers.Layer):
     '''
     modified from : https://github.com/csvance/keras-global-weighted-pooling/blob/master/gwp.py#L51
@@ -77,7 +77,7 @@ class GlobalPooling2D(keras.layers.Layer):
         x = keras.layers.Activation(self.act)(z)
         return x
 
-@keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable("CustomLayers", name="stochastic_depth")
 class StochasticDepth(keras.layers.Layer):
     """
     source : https://github.com/keras-team/keras/blob/v3.3.3/keras/src/applications/convnext.py#L140
@@ -101,7 +101,7 @@ class StochasticDepth(keras.layers.Layer):
         config.update({"drop_path_rate": self.drop_path_rate})
         return config
 
-@keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable("CustomLayers", name="layer_scale")
 class LayerScale(keras.layers.Layer):
     """
     source : https://github.com/keras-team/keras/blob/v3.3.3/keras/src/applications/convnext.py#L177
