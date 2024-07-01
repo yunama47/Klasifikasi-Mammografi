@@ -55,16 +55,20 @@ def models_download(download_folder, repo_owner=repo_owner, repo_name=repo_name,
     asset_list = get_release_assets(repo_owner, repo_name, token, tag_name)
     os.makedirs(download_folder, exist_ok=True)
     for asset_name, download_url in asset_list:
-        print(f"Downloading {asset_name} from {download_url}")
-        response = requests.get(download_url, headers={"Authorization": f"token {token}"})
+        download_path = os.path.join(download_folder, asset_name)
+        if not os.path.exists(download_path):
+            print(f"Downloading {asset_name} from {download_url}")
+            response = requests.get(download_url, headers={"Authorization": f"token {token}"})
 
-        if response.status_code == 200:
-            with open(f"{download_folder}/{asset_name}", "wb") as f:
-                f.write(response.content)
-            print(f"Successfully downloaded {asset_name}")
+            if response.status_code == 200:
+                with open(download_path, "wb") as f:
+                    f.write(response.content)
+                print(f"Successfully downloaded {asset_name}")
+            else:
+                print(f"Failed to download {asset_name}")
+                print(response.json())
         else:
-            print(f"Failed to download {asset_name}")
-            print(response.json())
+            print(f"Already downloaded {asset_name} in {download_path}")
 
 
 

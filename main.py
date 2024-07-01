@@ -10,9 +10,9 @@ from model_download import models_download
 D = PreprocessingDICOM()
 A = AdjustImage()
 print("downloading models".center(40,"-"))
-models_download("./model")
+models_download("model")
 print("loading models".center(40,"-"))
-infer = ModelInference("./model")
+infer = ModelInference("model")
 print("starting gradio web-ui".center(40,"-"))
 def dicom_preprocessing_options(option:str):
     assert option in list(vars(D).keys()), gr.Error("invalid option")
@@ -52,8 +52,8 @@ def readable_prediction(im1, im2, model_fold):
         prob *= 100
         if abs(result[1]-prob) <= 1:
             color = 'lime'
-        elif abs(result[1]-prob) <= 15:
-            color = 'yellow'
+        elif abs(result[1]-prob) <= 20:
+            color = 'green'
         prediction_texts += f'\n * <span style="color: {color};">{birads} : {prob:.3f}% </span>'
     return prediction_texts
 
@@ -125,4 +125,4 @@ with gr.Blocks() as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(show_api=False)
+    demo.launch()
