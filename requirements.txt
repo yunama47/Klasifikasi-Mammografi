@@ -1,4 +1,4 @@
-tensorflow~=2.15
+https://files.pythonhosted.org/packages/81/40/31b27ab3f46de305475ef5160acc8a2addb8fa9ea2179777c4e9bcc5baaf/tensorflow-2.15.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
 keras~=2.15
 gradio
 numpy
