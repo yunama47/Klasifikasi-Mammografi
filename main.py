@@ -5,10 +5,15 @@ from dicom_preprocessing import (BLANK,
                                  PreprocessingDICOM,
                                  AdjustImage)
 from inference import ModelInference
+from model_download import models_download
+
 D = PreprocessingDICOM()
 A = AdjustImage()
-infer = ModelInference("model")
-
+print("downloading models".center(40,"-"))
+models_download("./model")
+print("loading models".center(40,"-"))
+infer = ModelInference("./model")
+print("starting gradio web-ui".center(40,"-"))
 def dicom_preprocessing_options(option:str):
     assert option in list(vars(D).keys()), gr.Error("invalid option")
 

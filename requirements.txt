@@ -4,3 +4,4 @@ gradio
 numpy
 pydicom
 opencv-python
+requests
