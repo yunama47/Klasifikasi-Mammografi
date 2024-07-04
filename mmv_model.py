@@ -12,8 +12,6 @@ from keras.applications import (
 )
 KERAS_VERSION = keras.__version__
 TF_VERSION = tf.__version__
-print("tensorflow version", TF_VERSION)
-print("keras version", KERAS_VERSION)
 
 def load_pretrained_weight(variant, image_size: tuple):
     assert KERAS_VERSION.startswith("2"), f"keras version {KERAS_VERSION} not supported, only support keras version 2.x"
@@ -319,7 +317,7 @@ def spatial_downsampling(x: tf.Tensor, stage: int, dim: int,
 def convnext_stage(x: tf.Tensor, dim: int, depth: int, stage: int,
                    pretrained=None,
                    layer_scale_init_value=1e-6,
-                   depth_drop_rates=None,
+                   depth_drop_rates: np.ndarray = None,
                    name='stage',
                    variant='convnext_small'
                    ) -> tf.Tensor:
@@ -340,7 +338,7 @@ def convnext_stage(x: tf.Tensor, dim: int, depth: int, stage: int,
     if depth_drop_rates is None:
         depth_drop_rates = np.zeros(depth)
     for j in range(depth):
-        o = ConvNext_Block(o,
+        o = convnext_block(o,
                            dim=dim,
                            pretrained=pretrained,
                            stage=stage, block=j,
@@ -387,7 +385,7 @@ def convnext_stage_and_downsampling(x: tf.Tensor, dim: int, depth: int, stage: i
                                  name=f'{variant}_{view}',
                                  x=x)
 
-    x = ConvNext_Stage(x=x,
+    x = convnext_stage(x=x,
                        dim=dim,
                        depth=depth,
                        stage=stage,
@@ -400,7 +398,7 @@ def convnext_stage_and_downsampling(x: tf.Tensor, dim: int, depth: int, stage: i
 
 def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int,
                             pretrained_weights=None,
-                            depth_drop_rates=0.0,
+                            depth_drop_rates: np.ndarray = None,
                             fusion_block_index=0,
                             model_var='convnext_small',
                             ) -> tf.Tensor:
@@ -412,7 +410,7 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
                                  )
         pre_fusion_x[view] = x
     x_dual_skip = pre_fusion_x.copy()
-    if depth_drop_rates == 0.0:
+    if depth_drop_rates is None:
         depth_drop_rates = np.zeros(depths[i])
     if fusion_block_index > depth:
         fusion_block_index = depth-1
@@ -445,6 +443,79 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
     return x
 
 
+"""
+==============================================================
+============ function to create multi-view model =============
+==============================================================
+"""
+
+def get_inputs(image_size=(512, 288)):
+    inputs = {
+        "Examined": keras.Input(shape=[*image_size, 3], name='Examined', dtype=tf.float32),
+        "Aux": keras.Input(shape=[*image_size, 3], name='Aux', dtype=tf.float32)
+    }
+    return inputs
+
+def create_model(model_var='convnext_tiny',
+                 fusion_stage=3,
+                 fusion_block_index=1,
+                 fc_layers_depth=1,
+                 fc_layers_dims=512,
+                 drop_path_rate=0.2,
+                 drop_out_rate=0.5,
+                 pooling='w_avg',
+                 pretrained_weights=None,
+                 ):
+    inputs = get_inputs()
+    x = inputs.copy()
+    dims, depths = get_dims_depth(model_var)
+    depth_drop_rates = np.linspace(0, drop_path_rate, sum(depths), dtype=float)
+    blocks_passed = 0
+    for stage in range(len(dims)):
+        current_stage_depth_drop_rates = depth_drop_rates[blocks_passed:blocks_passed + depths[stage]]
+        blocks_passed += depths[stage]
+        if stage < fusion_stage:
+            for view in ["Examined", "Aux"]:
+                x[view] = convnext_stage_and_downsampling(x[view], dims[stage],
+                                                          depths[stage], stage,
+                                                          pretrained_weights,
+                                                          current_stage_depth_drop_rates,
+                                                          variant=model_var,
+                                                          view=view)
+            continue
+        if stage == fusion_stage:
+            x = multi_view_fusion_stage(x, dims[stage], depths[stage], stage,
+                                        pretrained_weights,
+                                        current_stage_depth_drop_rates,
+                                        fusion_block_index,
+                                        model_var)
+            continue
+        x = convnext_stage_and_downsampling(x, dims[stage], depths[stage], stage,
+                                            pretrained_weights,
+                                            current_stage_depth_drop_rates,
+                                            variant=model_var,
+                                            view='fused')
+    else:
+        if isinstance(x, dict):
+            x = keras.layers.Average(name=f'{model_var}_fusion_merge')(list(x.values()))
+    x = GlobalPooling2D(pooling, name=f'{model_var}_global_pooling')(x)
+    LN1 = keras.layers.LayerNormalization(epsilon=1e-6, name=f'{model_var}_pre_FC_ln')
+    x = LN1(x)
+    if pretrained_weights:
+        LN1.set_weights([
+            pretrained_weights['layer_normalization.gamma'].numpy(),
+            pretrained_weights['layer_normalization.beta'].numpy(),
+        ])
+    x = keras.layers.Dropout(drop_out_rate)(x)
+    for i in range(fc_layers_depth):
+        x = keras.layers.Dense(fc_layers_dims, activation='gelu', name=f'{model_var}_cls_{i}')(x)
+    output = keras.layers.Dense(5, activation='softmax', dtype='float32', name=f'{model_var}_output')(x)
+    model = keras.src.models.Functional(inputs, output, name=f'{model_var}_mammo_multi_view')
+    return model
+
+
 if __name__ == "__main__":
-    X = np.random.uniform(size=(100, 32, 32, 3))
-    y = np.random.uniform(size=(100, 1))
+    print("tensorflow version", TF_VERSION)
+    print("keras version", KERAS_VERSION)
+    test_model = create_model("convnext_tiny")
+    test_model.summary()
