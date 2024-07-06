@@ -91,7 +91,7 @@ class PreprocessingDICOM:
         self.fix_monochrome = True
         self.padding = True
         self.resize = (288, 512)
-        self.roi_crop = "None"
+        self.roi_crop = "otsu"
 
     def process_dicom_files(self, list_filepath:list):
         if list_filepath is None:

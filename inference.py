@@ -2,6 +2,7 @@ import numpy as np
 import mmv_model
 import keras
 import glob
+import pathlib
 import os
 IMAGE_SIZE = (512, 288, 3)
 
@@ -9,26 +10,30 @@ class UserError(Exception):
     pass
 
 class ModelInference:
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: pathlib.Path):
         """
         model inference class
         :param model_path: keras hdf5 model path or directory containing keras hdf5 files
         """
-        if model_path.endswith('.h5'):
-            self.models: keras.Model = keras.models.load_model(model_path)
-        elif os.path.isdir(model_path):
-            self.models: dict = {}
+        if model_path.is_file() and model_path.__str__().endswith('.h5'):
+            self.model: keras.Model = keras.models.load_model(model_path)
+            self.model_list = [os.path.basename(model_path)]
+        elif model_path.is_dir():
+            self.model: dict = {}
+            self.model_list = ["k-fold ensemble"]
             pattern = os.path.join(model_path, "*_fold-{}_*.h5")
-            self.total_files = len(glob.glob(pattern.format("*")))
-            for fold in range(self.total_files):
+            self.k = len(glob.glob(pattern.format("*")))
+            for fold in range(self.k):
                 try:
                     fold_path = glob.glob(pattern.format(fold))[0]
-                    print("loading", fold_path)
-                    self.models[f"fold-{fold}"] = keras.models.load_model(fold_path)
+                    model_name = os.path.basename(fold_path)
+                    print("loading", model_name)
+                    self.model[model_name] = keras.models.load_model(fold_path)
+                    self.model_list.append(model_name)
                 except IndexError as e:
                     print(f"model fold {fold} not found")
         else:
-            raise UserError("Model path should be a HDF5 file or directory.")
+            raise UserError(f"Model path should be a HDF5 file or directory. But got {str(model_path)}")
 
     def inference_single(self, Examined_view: np.ndarray, Auxiliary_view: np.ndarray = None, fold: str = None):
         """
@@ -46,23 +51,32 @@ class ModelInference:
             "Examined": np.expand_dims(Examined_view, 0),
             "Aux": np.expand_dims(Auxiliary_view, 0),
         }
-        if isinstance(self.models, keras.Model):
-            print("prediction of single fold")
-            prediction = self.model.predict(inputs_dict, verbose=0)[0]
-        elif fold is not None and fold in list(self.models.keys()):
-            print("prediction of fold", fold)
-            prediction = self.models[fold].predict(inputs_dict, verbose=0)[0]
-        elif fold == "k-fold ensemble":
-            print("prediction of k-fold ensemble")
+        if fold == "k-fold ensemble" and not isinstance(self.model, keras.Model):
+            print("prediction of k-fold ensemble models")
             probs = []
-            for fold in range(self.total_files):
-                pred = self.models[f"fold-{fold}"].predict(inputs_dict, verbose=0)
+            for i in range(self.k):
+                pred = self.model[self.model_list[i+1]].predict(inputs_dict, verbose=0)
                 probs.append(pred)
             prediction = np.array(probs)
             prediction = np.mean(prediction, axis=0)[0]
+        elif isinstance(self.model, keras.Model):
+            print("prediction of", self.model_list[0])
+            prediction = self.model.predict(inputs_dict, verbose=0)[0]
+        elif fold in list(self.model_list):
+            print("prediction of", fold)
+            prediction = self.model[fold].predict(inputs_dict, verbose=0)[0]
         else:
             raise UserError("unknown fold.")
         return prediction
+
+    @property
+    def get_model_list(self):
+        if self.model_list is None:
+            return []
+        elif isinstance(self.model_list, dict):
+            return list(self.model_list.values())
+        elif isinstance(self.model_list, list):
+            return self.model_list
 
 
 if __name__ == '__main__':

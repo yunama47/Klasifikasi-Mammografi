@@ -5,3 +5,4 @@ numpy
 pydicom
 opencv-python
 requests
+kaggle
