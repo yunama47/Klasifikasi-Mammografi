@@ -18,7 +18,7 @@ def crop_coords(img):
     cnts, _ = cv2.findContours(breast_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cnt = max(cnts, key = cv2.contourArea)
     x, y, w, h = cv2.boundingRect(cnt)
-    return (x, y, w, h)
+    return x, y, w, h
 
 def otsu_roi_crop(data):
     xmin, ymin, w, h = crop_coords(data)
@@ -27,9 +27,9 @@ def otsu_roi_crop(data):
     data = data[ymin:ymax,xmin:xmax]
     return data
 
-def pad_to_9_16(img):
+def pad_to_scale_ratio(img, laterality, scale):
     height, width = img.shape[:2]
-    target_ratio = 9 / 16
+    target_ratio = scale[0] / scale[1]
 
     if width / height > target_ratio:  # Image is wider than 9:16
         new_width = width
@@ -40,7 +40,10 @@ def pad_to_9_16(img):
         new_width = int(height * target_ratio)
         new_height = height
         top_bottom_padding = 0
-        left_right_padding = (new_width - width) // 2
+        if laterality == "R":
+            left_right_padding = (new_width - width)
+        else:
+            left_right_padding = 0
 
     # Create a blank image with the target dimensions
     padded_img = np.zeros((new_height, new_width), dtype=np.uint8)
@@ -51,13 +54,21 @@ def pad_to_9_16(img):
 
     return padded_img
 
+def get_laterality(data: np.ndarray):
+    sum_L = np.sum(data[:, :20])
+    sum_R = np.sum(data[:, -20:])
+    if sum_L == sum_R:
+        laterality = "<?>"
+    else:
+        laterality = 'L' if sum_L > sum_R else 'R'
+    return laterality
 
 def read_dicom(path,
-               voi_lut:bool=True,
-               fix_monochrome:bool=True,
-               pad:bool=False,
-               roi_crop:str=None,
-               resize:tuple|list=(288, 512)
+               voi_lut: bool = True,
+               fix_monochrome: bool = True,
+               pad_scale: tuple = (1, 1),
+               roi_crop: str = None,
+               resize: tuple|list = (288, 512)
                ):
     dicom = pydicom.read_file(path)
     if voi_lut:
@@ -69,31 +80,27 @@ def read_dicom(path,
     data = data - np.min(data)
     data = data / np.max(data)
     data = (data * 255).astype(np.uint8)
-
-    sum_L = np.sum(data[:, :2])
-    sum_R = np.sum(data[:, -2:])
-    laterality = 'L' if sum_L > sum_R else 'R'
     # otsu roi cropping
     if roi_crop == 'otsu':
         data = otsu_roi_crop(data)
     # padding
-    if pad:
-        data = pad_to_9_16(data)
+    if pad_scale is not None:
+        data = pad_to_scale_ratio(data, get_laterality(data), pad_scale)
     # resize
     if resize is not None:
         data = cv2.resize(data, resize, interpolation=cv2.INTER_LINEAR)
 
-    return data, laterality
+    return data
 
 class PreprocessingDICOM:
     def __init__(self):
         self.voi_lut = True
         self.fix_monochrome = True
-        self.padding = True
+        self.padding = (9, 16)
         self.resize = (288, 512)
         self.roi_crop = "otsu"
 
-    def process_dicom_files(self, list_filepath:list):
+    def process_dicom_files(self, list_filepath: list):
         if list_filepath is None:
             return [BLANK, BLANK]
         if len(list_filepath) > 2:
@@ -101,29 +108,29 @@ class PreprocessingDICOM:
             list_filepath = list_filepath[:2]
             gr.Warning(f"Using only first two files, this files is not used: \n{dropped}")
         elif len(list_filepath) < 2:
-            image, _ = read_dicom(
+            image = read_dicom(
                 path=list_filepath[0],
                 fix_monochrome=self.fix_monochrome,
-                pad=self.padding,
+                pad_scale=self.padding,
                 roi_crop=self.roi_crop,
                 resize=self.resize
             )
             return [image, BLANK]
-        image1, laterality1 = read_dicom(
+        image1 = read_dicom(
             path=list_filepath[0],
             fix_monochrome=self.fix_monochrome,
-            pad=self.padding,
+            pad_scale=self.padding,
             roi_crop=self.roi_crop,
             resize=self.resize
         )
-        image2, laterality2 = read_dicom(
+        image2 = read_dicom(
             path=list_filepath[1],
             fix_monochrome=self.fix_monochrome,
-            pad=self.padding,
+            pad_scale=self.padding,
             roi_crop=self.roi_crop,
             resize=self.resize
         )
-        if laterality1 != laterality2:
+        if get_laterality(image1) != get_laterality(image2):
             gr.Warning("Fist two images is bilateral views")
         return [image1, image2]
 
