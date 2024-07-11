@@ -96,13 +96,15 @@ class PreprocessingDICOM:
     def __init__(self):
         self.voi_lut = True
         self.fix_monochrome = True
-        self.padding = (9, 16)
+        self.padding = True
         self.resize = (288, 512)
-        self.roi_crop = "otsu"
+        self.roi_crop = True
 
     def process_dicom_files(self, list_filepath: list):
         if list_filepath is None:
             return [BLANK, BLANK]
+        pad_scale = (9, 16) if self.padding else None
+        crop_method = "otsu" if self.roi_crop else None
         if len(list_filepath) > 2:
             dropped = "\n".join([os.path.basename(f) for f in list_filepath[2:]])
             list_filepath = list_filepath[:2]
@@ -111,23 +113,23 @@ class PreprocessingDICOM:
             image = read_dicom(
                 path=list_filepath[0],
                 fix_monochrome=self.fix_monochrome,
-                pad_scale=self.padding,
-                roi_crop=self.roi_crop,
+                pad_scale=pad_scale,
+                roi_crop=crop_method,
                 resize=self.resize
             )
             return [image, BLANK]
         image1 = read_dicom(
             path=list_filepath[0],
             fix_monochrome=self.fix_monochrome,
-            pad_scale=self.padding,
-            roi_crop=self.roi_crop,
+            pad_scale=pad_scale,
+            roi_crop=crop_method,
             resize=self.resize
         )
         image2 = read_dicom(
             path=list_filepath[1],
             fix_monochrome=self.fix_monochrome,
-            pad_scale=self.padding,
-            roi_crop=self.roi_crop,
+            pad_scale=pad_scale,
+            roi_crop=crop_method,
             resize=self.resize
         )
         if get_laterality(image1) != get_laterality(image2):

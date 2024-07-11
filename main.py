@@ -117,13 +117,13 @@ with gr.Blocks() as demo:
                     apply_voi_lut = gr.Checkbox(label='Apply VOI LUT', value=D.voi_lut)
                     apply_voi_lut.change(dicom_preprocessing_options('voi_lut'),
                                          inputs=[files_input, apply_voi_lut], outputs=[tmp_image1, tmp_image2])
-                    fix_monochrome = gr.Checkbox(label='Fix Monochrome', value=D.fix_monochrome)
+                    fix_monochrome = gr.Checkbox(label='Nagative Inversion', value=D.fix_monochrome)
                     fix_monochrome.change(dicom_preprocessing_options('fix_monochrome'),
                                           inputs=[files_input, fix_monochrome], outputs=[tmp_image1, tmp_image2])
-                    padding = gr.Checkbox(label='Padding', value=D.padding)
+                    padding = gr.Checkbox(label='Padding to 9:16 ratio', value=D.padding)
                     padding.change(dicom_preprocessing_options('padding'),
                                    inputs=[files_input, padding], outputs=[tmp_image1, tmp_image2])
-                    roi_crop = gr.Dropdown(choices=["otsu","None"], label="ROI cropping methods", value=D.roi_crop)
+                    roi_crop = gr.Checkbox(label="Crop Image", value=D.roi_crop)
                     roi_crop.change(dicom_preprocessing_options('roi_crop'),
                                     inputs=[files_input, roi_crop], outputs=[tmp_image1, tmp_image2])
 
