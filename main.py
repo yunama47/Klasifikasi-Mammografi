@@ -11,11 +11,10 @@ from downloads import models_download, download_example_dicom
 
 D = PreprocessingDICOM()
 A = AdjustImage()
-MODEL_DIR = pathlib.Path("models")
 
 print(" Preparing to launch ".center(50, "="))
-print(f"downloading models to {MODEL_DIR.absolute()}")
-models_download(MODEL_DIR)
+print(f"downloading models...")
+MODEL_DIR = pathlib.Path(models_download())
 print(f"loading models from {MODEL_DIR.absolute()}")
 infer = ModelInference(MODEL_DIR)
 print(f"downloading example dicom files")
@@ -75,10 +74,10 @@ with gr.Blocks() as demo:
         tmp_image2 = gr.Image(value=BLANK, format="PNG", visible=False)
         tmp_texbox1 = gr.Textbox()
         tmp_texbox2 = gr.Textbox()
-    with gr.Tab("Single Input"):
+    with gr.Tab("main"):
         gr.Markdown(
             """
-            # Single Input | Breast Mammography Classification
+            # Breast Mammography Classification with Ipsilateral Multi-view model
             ---
             """
         )

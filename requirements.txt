@@ -6,3 +6,4 @@ pydicom
 opencv-python
 requests
 kaggle
+kagglehub

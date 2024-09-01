@@ -7,27 +7,42 @@ from pydicom.pixel_data_handlers.util import apply_voi_lut
 
 BLANK = np.zeros(shape=[512, 288, 3])
 
-def crop_coords(img):
-    """
-    Crop ROI from image.
-    """
-    # Otsu's thresholding after Gaussian filtering
-    blur = cv2.GaussianBlur(img, (3, 3), 0.1)
-    img_16bit = cv2.normalize(blur, None, 0, 65535, cv2.NORM_MINMAX, dtype=cv2.CV_16U)
-    _, breast_mask = cv2.threshold(img_16bit,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    cnts, _ = cv2.findContours(breast_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cnt = max(cnts, key = cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(cnt)
-    return x, y, w, h
+def extract_roi_otsu(data, gkernel=(5, 5), area_pct_tresh=0.004):
+    ori_h, ori_w = data.shape[:2]
+    img = data.copy()
+    # Gaussian filtering to reduce noise (optional)
+    if gkernel is not None:
+        img = cv2.GaussianBlur(img, gkernel, 0)
+    _, img_bin = cv2.threshold(img, 0, 255,
+                               cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # dilation to improve contours connectivity
+    element = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3), (-1, -1))
+    img_bin = cv2.dilate(img_bin, element)
+    cnts, _ = cv2.findContours(img_bin, cv2.RETR_EXTERNAL,
+                               cv2.CHAIN_APPROX_SIMPLE)
+    if len(cnts) == 0:
+        return [0, 0, ori_w, ori_h]
+    areas = np.array([cv2.contourArea(cnt) for cnt in cnts])
+    select_idx = np.argmax(areas)
+    cnt = cnts[select_idx]
+    area_pct = areas[select_idx] / (img.shape[0] * img.shape[1])
+    if area_pct < area_pct_tresh:
+        return [0, 0, ori_w, ori_h]
+    x0, y0, w, h = cv2.boundingRect(cnt)
+    # min-max for safety only
+    # x0, y0, x1, y1
+    x1 = min(max(int(x0 + w), 0), ori_w)
+    y1 = min(max(int(y0 + h), 0), ori_h)
+    x0 = min(max(int(x0), 0), ori_w)
+    y0 = min(max(int(y0), 0), ori_h)
+    return [x0, y0, x1, y1]
 
-def otsu_roi_crop(data):
-    xmin, ymin, w, h = crop_coords(data)
-    xmax = xmin + w
-    ymax = ymin + h
-    data = data[ymin:ymax,xmin:xmax]
+def otsu_roi_crop(data, area_pct_tresh=0.03):
+    x0, y0, x1, y1 = extract_roi_otsu(data, (3, 3), area_pct_tresh)
+    data = data[y0:y1,x0:x1]
     return data
 
-def pad_to_scale_ratio(img, laterality, scale):
+def pad_to_scale_ratio(img, laterality, scale, pad_value=0):
     height, width = img.shape[:2]
     target_ratio = scale[0] / scale[1]
 
@@ -46,7 +61,7 @@ def pad_to_scale_ratio(img, laterality, scale):
             left_right_padding = 0
 
     # Create a blank image with the target dimensions
-    padded_img = np.zeros((new_height, new_width), dtype=np.uint8)
+    padded_img = np.ones((new_height, new_width), dtype=np.uint8) * pad_value
 
     # Copy the original image onto the padded image with the calculated offsets
     padded_img[top_bottom_padding:top_bottom_padding + height,
@@ -54,21 +69,50 @@ def pad_to_scale_ratio(img, laterality, scale):
 
     return padded_img
 
-def get_laterality(data: np.ndarray):
-    sum_L = np.sum(data[:, :20])
-    sum_R = np.sum(data[:, -20:])
-    if sum_L == sum_R:
-        laterality = "<?>"
-    else:
-        laterality = 'L' if sum_L > sum_R else 'R'
+def get_laterality(data: np.ndarray, laterality=None):
+    if laterality is None:
+        sum_L = np.sum(data[:, :20])
+        sum_R = np.sum(data[:, -20:])
+        if sum_L == sum_R:
+            laterality = "<?>"
+        else:
+            laterality = 'L' if sum_L > sum_R else 'R'
     return laterality
+
+
+def cut_far_pixels(img, laterality):
+    _, width = img.shape[:2]
+    cut = None
+    for c in np.arange(0.01, 0.41, 0.02):
+        far_cuts = int(c*width)
+        if laterality == "L":
+            far = img[:, -far_cuts:]
+        elif laterality == "R":
+            far = img[:, :far_cuts]
+        else:
+            break
+        percentile = np.percentile(far, 80)
+        is_save_to_cut = 10 > percentile or 160 < percentile
+        if is_save_to_cut:
+            cut = width-far_cuts
+        else:
+            break
+    if laterality == "L":
+        return img[:, :cut]
+    elif laterality == "R":
+        return img[:, -(cut or 0):]
+    else:
+        return img
 
 def read_dicom(path,
                voi_lut: bool = True,
                fix_monochrome: bool = True,
                pad_scale: tuple = (1, 1),
+               pad_value: int = 0,
                roi_crop: str = None,
-               resize: tuple|list = (288, 512)
+               resize: tuple|list = (288, 512),
+               return_misch: bool=False,
+               laterality: str = None,
                ):
     dicom = pydicom.read_file(path)
     if voi_lut:
@@ -82,15 +126,21 @@ def read_dicom(path,
     data = (data * 255).astype(np.uint8)
     # otsu roi cropping
     if roi_crop == 'otsu':
+        data = cut_far_pixels(data, get_laterality(data, laterality))
         data = otsu_roi_crop(data)
+    elif roi_crop is not None:
+        data = cut_far_pixels(data, get_laterality(data, laterality))
+    median = np.median(data)
     # padding
     if pad_scale is not None:
-        data = pad_to_scale_ratio(data, get_laterality(data), pad_scale)
+        data = pad_to_scale_ratio(data, get_laterality(data, laterality), pad_scale, pad_value)
     # resize
     if resize is not None:
         data = cv2.resize(data, resize, interpolation=cv2.INTER_LINEAR)
-
-    return data
+    if return_misch:
+        return data, median
+    else:
+        return data
 
 class PreprocessingDICOM:
     def __init__(self):
@@ -167,5 +217,6 @@ class AdjustImage:
         # adjust brightness
         img = np.clip(img + brightness, 0, 255)
         return img.astype(np.uint8)
+
 
 __all__ = ["PreprocessingDICOM", "AdjustImage"]
