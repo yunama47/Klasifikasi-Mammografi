@@ -1,9 +1,9 @@
 tensorflow==2.16.2
 keras==3.4.1
 gradio==4.29.0
-numpy==1.26.4
-pydicom==2.4.4
-opencv-python==4.9.0.80
-requests==2.31.0
-kaggle==1.6.14
+numpy
+pydicom
+opencv-python
+requests
+kaggle
 kagglehub==0.2.9
