@@ -7,6 +7,6 @@ colorFrom: red
 colorTo: green
 short_description: Mammography Images Classification
 app_file: main.py
-sdk_version: 4.37.2
+sdk_version: 4.42.0
 ---
 # KLASIFIKASI GAMBAR CITRA MEDIS MAMOGRAFI BERBASIS CONVOLUTIONAL NEURAL NETWORKS (CNNs) DENGAN ARSITEKTUR MODEL MULTI-VIEW

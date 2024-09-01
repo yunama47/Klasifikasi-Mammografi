@@ -2,6 +2,11 @@ import os
 import requests
 import zipfile
 import tarfile
+import subprocess
+
+subprocess.run(["pip", "install", "--upgrade", "pip"])
+subprocess.run(["pip", "install", "kaggle", "kagglehub"])
+
 import kagglehub
 from kaggle.api.kaggle_api_extended import KaggleApi
 
