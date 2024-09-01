@@ -19,6 +19,7 @@ print(f"loading models from {MODEL_DIR.absolute()}")
 infer = ModelInference(MODEL_DIR)
 print(f"downloading example dicom files")
 download_example_dicom()
+example_dicom_dir = "example_dicom"
 print(" Preparation Finished ".center(50, "="))
 def dicom_preprocessing_options(option:str):
     assert option in list(vars(D).keys()), gr.Error("invalid option")
@@ -64,7 +65,7 @@ def readable_prediction(im1, im2, model_fold):
     return prediction_texts
 
 def example_fn(*args):
-    files = [os.path.join('example_dicom', f) for f in args]
+    files = [os.path.join(example_dicom_dir, f) for f in args]
     return files
 
 
@@ -89,7 +90,7 @@ with gr.Blocks() as demo:
                 files_input = gr.Files(label="Input DICOM files (2 Ipsilateral view images)",
                                        file_types=[".dicom", ".DICOM", '.dcm'],
                                        type='filepath')
-                examples = [[os.path.basename(path) for path in glob.glob(f"example_dicom/*_{birads}_*.dicom")[:2]] for
+                examples = [[os.path.basename(path) for path in glob.glob(f"{example_dicom_dir}/*_{birads}_*.dicom")[:2]] for
                             birads in range(1, 6)]
                 gr.Examples(examples,
                             inputs=[tmp_texbox1, tmp_texbox2],
