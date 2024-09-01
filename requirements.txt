@@ -1,3 +1,4 @@
+pip==24.2
 tensorflow~=2.16
 keras~=3.4.1
 gradio
@@ -6,4 +7,4 @@ pydicom
 opencv-python
 requests
 kaggle
-kagglehub
+kagglehub==0.2.9

@@ -5,6 +5,7 @@ import tarfile
 import kagglehub
 from kaggle.api.kaggle_api_extended import KaggleApi
 
+print(kagglehub.__version__)
 api = KaggleApi()
 api.authenticate()
 
