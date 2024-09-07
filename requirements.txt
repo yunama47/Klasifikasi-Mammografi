@@ -6,3 +6,4 @@ numpy
 pydicom
 opencv-python
 requests
+kagglehub
