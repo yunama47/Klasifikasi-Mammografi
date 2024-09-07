@@ -7,6 +7,7 @@ import time
 import os
 IMAGE_SIZE = (512, 288, 3)
 
+print("keras v"+keras.__version__)
 class UserError(Exception):
     pass
 
@@ -60,16 +61,16 @@ class ModelInference:
             self.print("prediction of k-fold ensemble models")
             probs = []
             for i in range(self.k):
-                pred = self.model[self.model_list[i+1]].predict(inputs_dict, verbose=0)
+                pred = self.model[self.model_list[i+1]].predict(inputs_dict, verbose=0)["birads"]
                 probs.append(pred)
             prediction = np.array(probs)
             prediction = np.mean(prediction, axis=0)[0]
         elif isinstance(self.model, keras.Model):
             self.print("prediction of", self.model_list[0])
-            prediction = self.model.predict(inputs_dict, verbose=0)[0]
+            prediction = self.model.predict(inputs_dict, verbose=0)["birads"][0]
         elif fold in list(self.model_list):
             self.print("prediction of", fold)
-            prediction = self.model[fold].predict(inputs_dict, verbose=0)[0]
+            prediction = self.model[fold].predict(inputs_dict, verbose=0)["birads"][0]
         else:
             raise UserError("unknown fold.")
         return prediction
@@ -93,10 +94,9 @@ if __name__ == '__main__':
     start = time.time()
     from downloads import models_download
     models_path = pathlib.Path(models_download())
-    infer = ModelInference(models_path, verbose=True, warmup=True)
+    infer = ModelInference(models_path, verbose=True)
     start_infer = time.time()
     infer.test_inference()
     finish_infer = time.time()
     print("total time :", finish_infer - start, 'seconds')
     print("inference time :", finish_infer - start_infer, 'seconds')
-    print(p, p.dtype)

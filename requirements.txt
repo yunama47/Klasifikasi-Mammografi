@@ -1,6 +1,6 @@
 pip==24.2
-tensorflow~=2.16
-keras~=3.4.1
+tensorflow==2.15
+keras==2.15
 gradio
 numpy
 pydicom
