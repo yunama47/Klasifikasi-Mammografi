@@ -465,8 +465,11 @@ def create_model(model_var='convnext_tiny',
                  drop_out_rate=0.5,
                  pooling='w_avg',
                  pretrained_weights=None,
+                 image_size=(512, 288),
+                 num_class=1,
+                 top_activation='linear'
                  ):
-    inputs = get_inputs()
+    inputs = get_inputs(image_size)
     x = inputs.copy()
     dims, depths = get_dims_depth(model_var)
     depth_drop_rates = np.linspace(0, drop_path_rate, sum(depths), dtype=float)
@@ -509,7 +512,7 @@ def create_model(model_var='convnext_tiny',
     x = keras.layers.Dropout(drop_out_rate)(x)
     for i in range(fc_layers_depth):
         x = keras.layers.Dense(fc_layers_dims, activation='gelu', name=f'{model_var}_cls_{i}')(x)
-    output = keras.layers.Dense(5, activation='softmax', dtype='float32', name=f'{model_var}_output')(x)
+    output = keras.layers.Dense(num_class, activation=top_activation, dtype='float32', name=f'{model_var}_output')(x)
     model = keras.src.models.Functional(inputs, output, name=f'{model_var}_mammo_multi_view')
     return model
 

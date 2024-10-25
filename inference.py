@@ -1,3 +1,4 @@
+import tensorflow as tf
 import numpy as np
 import mmv_model
 import pathlib
@@ -5,9 +6,9 @@ import keras
 import glob
 import time
 import os
-IMAGE_SIZE = (512, 288, 3)
 
-print("keras v"+keras.__version__)
+from typing import Iterable, Sized
+IMAGE_SIZE = (512, 288, 3)
 class UserError(Exception):
     pass
 
@@ -41,6 +42,28 @@ class ModelInference:
         else:
             raise UserError(f"Model path should be a HDF5 file or directory. But got {str(model_path)}")
 
+    def __get_prediction(self, inputs, fold, output_size):
+        if fold == "k-fold ensemble" and not isinstance(self.model, keras.Model):
+            self.print("prediction of k-fold ensemble models")
+            pred_sum = np.zeros(shape=output_size, dtype="float64")
+            for i in range(self.k):
+                pred = self.model[self.model_list[i + 1]].predict(inputs)
+                if isinstance(pred, dict):
+                    pred = pred["birads"]
+                pred_sum += pred
+            prediction = pred_sum / self.k
+        elif isinstance(self.model, keras.Model):
+            self.print("prediction of", self.model_list[0])
+            prediction = self.model.predict(inputs, verbose=1)
+        elif fold in list(self.model_list):
+            self.print("prediction of", fold)
+            prediction = self.model[fold].predict(inputs, verbose=1)
+        else:
+            raise UserError("unknown fold.")
+        if isinstance(prediction, dict):
+            prediction = prediction["birads"]
+        return prediction
+
     def inference_single(self, Examined_view: np.ndarray, Auxiliary_view: np.ndarray = None, fold: str = None):
         """
         inference model multi view
@@ -57,23 +80,45 @@ class ModelInference:
             "Examined": np.expand_dims(Examined_view, 0),
             "Aux": np.expand_dims(Auxiliary_view, 0),
         }
-        if fold == "k-fold ensemble" and not isinstance(self.model, keras.Model):
-            self.print("prediction of k-fold ensemble models")
-            probs = []
-            for i in range(self.k):
-                pred = self.model[self.model_list[i+1]].predict(inputs_dict, verbose=0)["birads"]
-                probs.append(pred)
-            prediction = np.array(probs)
-            prediction = np.mean(prediction, axis=0)[0]
-        elif isinstance(self.model, keras.Model):
-            self.print("prediction of", self.model_list[0])
-            prediction = self.model.predict(inputs_dict, verbose=0)["birads"][0]
-        elif fold in list(self.model_list):
-            self.print("prediction of", fold)
-            prediction = self.model[fold].predict(inputs_dict, verbose=0)["birads"][0]
-        else:
-            raise UserError("unknown fold.")
+        prediction = self.__get_prediction(inputs_dict, fold, (1, 5))
+        return prediction[0]
+
+    def inference_batch(self, ds: tf.data.Dataset, fold: str = None, batch_size: int = 2):
+        """
+        batch inference model multi view
+        :param ds: tf.data.Dataset containing "Examined" and "Aux" images
+        :param fold: number of fold {0,1,2,...,N} or "k-fold ensemble" to use every fold
+        :param batch_size: batch size for inference
+        :return:
+        """
+        ds, cardinality = self.check_n_prep_ds(ds, batch_size)
+        prediction = self.__get_prediction(ds, fold, (cardinality, 5))
         return prediction
+    @staticmethod
+    def check_n_prep_ds(ds: tf.data.Dataset, batch_size=2):
+        unbatchSpec = tf.data.DatasetSpec({
+            "Examined": tf.TensorSpec(shape=IMAGE_SIZE, dtype=tf.float32),
+            "Aux": tf.TensorSpec(shape=IMAGE_SIZE, dtype=tf.float32),
+        })
+        batchSpec = tf.data.DatasetSpec({
+            "Examined": tf.TensorSpec(shape=[None, *IMAGE_SIZE], dtype=tf.float32),
+            "Aux": tf.TensorSpec(shape=[None, *IMAGE_SIZE], dtype=tf.float32),
+        })
+        if not isinstance(ds, tf.data.Dataset):
+            raise UserError("ds must be a tf.data.Dataset")
+        if unbatchSpec.is_compatible_with(ds):
+            cardinality = ds.cardinality().numpy()
+            ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+            return ds, cardinality
+        elif batchSpec.is_compatible_with(ds):
+            raise UserError(f"""ds must be compatible with:
+            {unbatchSpec}
+            please dont batch your dataset
+            """)
+        else:
+            raise UserError(f"""ds must be compatible with:
+            {unbatchSpec}
+            """)
 
     def test_inference(self):
         image1 = np.random.randint(0, 255, size=IMAGE_SIZE)

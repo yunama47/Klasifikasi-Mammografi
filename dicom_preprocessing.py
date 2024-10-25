@@ -6,7 +6,7 @@ import gradio as gr
 from pydicom.pixel_data_handlers.util import apply_voi_lut
 
 BLANK = np.zeros(shape=[512, 288, 3])
-MAX_PIXEL_TRES = 180
+MAX_PIXEL_TRES = 200
 AREA_PCT_TRES = 0.04
 
 def set_max_pixel_tres(value):
@@ -112,7 +112,7 @@ def cut_far_pixels(img, laterality, manual_inspected=False):
         return img
     _, width = img.shape[:2]
     cut = None
-    for c in np.arange(0.5, 0.01, -0.01):
+    for c in np.arange(0.5, 0.1, -0.01):
         far_cuts = int(c * width)
         if laterality == "L":
             far = img[:, -far_cuts:]
@@ -284,6 +284,8 @@ class PreprocessingDICOM:
         self.padding = True
         self.resize = (288, 512)
         self.roi_crop = True
+        self.lat = None
+        self.manual_inspected = False
 
     def process_dicom_files(self, list_filepath: list):
         if list_filepath is None:
@@ -301,7 +303,8 @@ class PreprocessingDICOM:
                 fix_monochrome=self.fix_monochrome,
                 pad_scale=pad_scale,
                 roi_crop=crop_method,
-                resize=self.resize
+                resize=self.resize,
+                lat=self.lat,
             )
             return [image, BLANK]
         image1, image2 = read_preprocess_multi_view(
@@ -310,7 +313,9 @@ class PreprocessingDICOM:
             fix_monochrome=self.fix_monochrome,
             pad_scale=pad_scale,
             roi_crop=crop_method,
-            resize=self.resize
+            resize=self.resize,
+            lat=self.lat,
+            manual_inspected=self.manual_inspected,
         )
         if get_laterality(image1) != get_laterality(image2):
             gr.Warning("Fist two images is bilateral views")

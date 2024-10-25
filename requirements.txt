@@ -3,7 +3,7 @@ tensorflow==2.15
 keras==2.15
 gradio
 numpy
-pydicom
+pydicom==2.4.4
 opencv-python
 requests
 kagglehub
