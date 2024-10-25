@@ -92,7 +92,7 @@ def pad_to_scale_ratio(img, laterality, scale, pad_value=0):
 
 
 def get_laterality(data: np.ndarray, lat=None):
-    if lat is None:
+    if lat is not None:
         return lat
     # setelah eksperimen lebih lanjut , lebih baik resize sebelum deteksi laterality
     data = cv2.resize(data.copy(), (144, 256), interpolation=cv2.INTER_LINEAR)
