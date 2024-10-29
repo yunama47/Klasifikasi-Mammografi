@@ -13,6 +13,16 @@ from keras.applications import (
 KERAS_VERSION = keras.__version__
 TF_VERSION = tf.__version__
 
+
+""" 
+===========================================================================
+============== Section 1.  Utilities & Custom layers ======================
+===========================================================================
+"""
+class UserError(Exception):
+    """ Custom exception class for exception raised from this script """
+    pass
+
 def load_pretrained_weight(variant, image_size: tuple):
     assert KERAS_VERSION.startswith("2"), f"keras version {KERAS_VERSION} not supported, only support keras version 2.x"
     convnext_variants_map = {
@@ -22,11 +32,14 @@ def load_pretrained_weight(variant, image_size: tuple):
         "convnext_large": ConvNeXtLarge,
         "convnext_xlarge": ConvNeXtXLarge,
     }
-    weights_path = convnext_variants_map[variant](
-        include_top=False,
-        weights="imagenet",
-        input_shape=(*image_size, 3),
-    ).get_weight_paths()
+    try:
+        weights_path = convnext_variants_map[variant](
+            include_top=False,
+            weights="imagenet",
+            input_shape=(*image_size, 3),
+        ).get_weight_paths()
+    except KeyError:
+        raise UserError(f"unknown variant {variant}, variant list : {convnext_variants_map.keys()}")
     return weights_path
 
 def get_dims_depth(variant):
@@ -37,10 +50,11 @@ def get_dims_depth(variant):
         "convnext_large": ([192, 384, 768, 1536], [3, 3, 27, 3]),
         "convnext_xlarge":([256, 512, 1024, 2048], [3, 3, 27, 3]),
     }
-    return convnext_dims_depth_map[variant]
-
-class UserError(Exception):
-    pass
+    try:
+        dims_depth = convnext_dims_depth_map[variant]
+    except KeyError:
+        raise UserError(f"unknown variant {variant}, variant list : {convnext_variants_map.keys()}")
+    return dims_depth
 
 @keras.saving.register_keras_serializable("CustomLayers", name="custom_global_pooling")
 class GlobalPooling2D(keras.layers.Layer):
@@ -164,7 +178,7 @@ class LayerScale(keras.layers.Layer):
 
 """ 
 ===========================================================================
-====== ConvNext components (stage, block, stem, downsampling, etc..) ======
+========== Section 2. ConvNext components (stage, block, etc..) ===========
 ===========================================================================
 """
 def convnext_block(x: tf.Tensor, dim: int, stage: int, block:int ,
@@ -367,6 +381,7 @@ def convnext_stage_and_downsampling(x: tf.Tensor, dim: int, depth: int, stage: i
     :return: output tensor
     """
     if stage == 0:
+        # Normalizes inputs with ImageNet-1k mean and std.
         x = keras.layers.Normalization(
             mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
             variance=[
@@ -432,7 +447,7 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
                                drop_path_rate=depth_drop_rates[j],
                                variant=model_var,
                                name=f'{model_var}_post-fusion_stage')
-            x = keras.layers.Add(name="merge_fused_and_examined_skip")([x, x_dual_skip["Examined"]])
+            x = keras.layers.Add(name="merge_fused_and_examined_skip")([x, x_dual_skip["CC"]])
             continue
         elif j > fusion_block_index:
             x = convnext_block(x, dim, stage, block=j,
@@ -444,21 +459,21 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
 
 
 """
-==============================================================
-============ function to create multi-view model =============
-==============================================================
+=========================================================================
+============ Section 3. Function to create multi-view model =============
+=========================================================================
 """
 
 def get_inputs(image_size=(512, 288)):
     inputs = {
-        "Examined": keras.Input(shape=[*image_size, 3], name='Examined', dtype=tf.float32),
-        "Aux": keras.Input(shape=[*image_size, 3], name='Aux', dtype=tf.float32)
+        "CC": keras.Input(shape=[*image_size, 3], name='CC', dtype=tf.float32),
+        "MLO": keras.Input(shape=[*image_size, 3], name='MLO', dtype=tf.float32)
     }
     return inputs
 
 def create_model(model_var='convnext_tiny',
                  fusion_stage=3,
-                 fusion_block_index=1,
+                 fusion_block_index=0,
                  fc_layers_depth=1,
                  fc_layers_dims=512,
                  drop_path_rate=0.2,
@@ -469,6 +484,9 @@ def create_model(model_var='convnext_tiny',
                  num_class=1,
                  top_activation='linear'
                  ):
+    """
+    Create Multi-View model for mammography (MMV model) with backbone model ConvNeXt
+    """
     inputs = get_inputs(image_size)
     x = inputs.copy()
     dims, depths = get_dims_depth(model_var)
@@ -478,7 +496,7 @@ def create_model(model_var='convnext_tiny',
         current_stage_depth_drop_rates = depth_drop_rates[blocks_passed:blocks_passed + depths[stage]]
         blocks_passed += depths[stage]
         if stage < fusion_stage:
-            for view in ["Examined", "Aux"]:
+            for view in ["CC", "MLO"]:
                 x[view] = convnext_stage_and_downsampling(x[view], dims[stage],
                                                           depths[stage], stage,
                                                           pretrained_weights,
@@ -499,7 +517,7 @@ def create_model(model_var='convnext_tiny',
                                             variant=model_var,
                                             view='fused')
     else:
-        if isinstance(x, dict):
+        if isinstance(x, dict):   # post-fusion
             x = keras.layers.Average(name=f'{model_var}_fusion_merge')(list(x.values()))
     x = GlobalPooling2D(pooling, name=f'{model_var}_global_pooling')(x)
     LN1 = keras.layers.LayerNormalization(epsilon=1e-6, name=f'{model_var}_pre_FC_ln')
@@ -510,6 +528,8 @@ def create_model(model_var='convnext_tiny',
             pretrained_weights['layer_normalization.beta'].numpy(),
         ])
     x = keras.layers.Dropout(drop_out_rate)(x)
+    backbone = keras.Model(inputs, x, name="mmmv_" + model_var)
+    x = backbone(inputs)
     for i in range(fc_layers_depth):
         x = keras.layers.Dense(fc_layers_dims, activation='gelu', name=f'{model_var}_cls_{i}')(x)
     output = keras.layers.Dense(num_class, activation=top_activation, dtype='float32', name=f'{model_var}_output')(x)
@@ -520,5 +540,6 @@ def create_model(model_var='convnext_tiny',
 if __name__ == "__main__":
     print("tensorflow version", TF_VERSION)
     print("keras version", KERAS_VERSION)
-    test_model = create_model("convnext_tiny")
+    test_model = create_model("convnext_small")
     test_model.summary()
+    keras.utils.plot_model(test_model, show_shapes=True, show_layer_names=True)
