@@ -14,9 +14,7 @@ def models_download(model_name="balanceds_k5fold_convnext_small"):
 
 def download_example_dicom():
     path = kagglehub.dataset_download("gedewahyupurnama/multi-view-dataset-v2", "example_dicom_tar_gz")
-    with zipfile.ZipFile(path, 'r') as zip_ref:
-        with zip_ref.open('example_dicom_tar_gz', 'r') as tarr:
-            with tarfile.open(fileobj=tarr, mode='r:gz') as tar_ref:
-                tar_ref.extractall()
+    with tarfile.open(path, mode='r:gz') as tar_ref:
+        tar_ref.extractall()
     print("example dicom files downloaded")
     return path

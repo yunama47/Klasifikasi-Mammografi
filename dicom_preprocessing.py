@@ -286,6 +286,7 @@ class PreprocessingDICOM:
         self.roi_crop = True
         self.lat = None
         self.manual_inspected = False
+        self.pad_value = 0
 
     def process_dicom_files(self, list_filepath: list):
         if list_filepath is None:
@@ -305,6 +306,7 @@ class PreprocessingDICOM:
                 roi_crop=crop_method,
                 resize=self.resize,
                 lat=self.lat,
+                pad_value=self.pad_value
             )
             return [image, BLANK]
         image1, image2 = read_preprocess_multi_view(
@@ -316,6 +318,7 @@ class PreprocessingDICOM:
             resize=self.resize,
             lat=self.lat,
             manual_inspected=self.manual_inspected,
+            pad_value=self.pad_value
         )
         if get_laterality(image1) != get_laterality(image2):
             gr.Warning("Fist two images is bilateral views")
