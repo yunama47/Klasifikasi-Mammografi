@@ -491,14 +491,16 @@ def create_model(model_var='convnext_tiny',
                  fusion_block_index=0,
                  fc_layers_depth=1,
                  fc_layers_dims=512,
+                 fc_layers_act="gelu",
                  drop_path_rate=0.2,
                  drop_out_rate=0.5,
                  pooling='w_avg',
                  pretrained_weights=None,
                  image_size=(512, 288),
-                 num_class=1,
+                 classes={"birads":5},
                  top_activation='linear',
-                 nested=False
+                 nested=False,
+                 name="MMV_model",
                  ):
     """
     Create Multi-View model for mammography (MMV model) with backbone model ConvNeXt
@@ -549,12 +551,14 @@ def create_model(model_var='convnext_tiny',
         ])
     x = keras.layers.Dropout(drop_out_rate)(x)
     for i in range(fc_layers_depth):
-        x = keras.layers.Dense(fc_layers_dims, activation='gelu', name=f'{model_var}_cls_{i}')(x)
+        x = keras.layers.Dense(fc_layers_dims, activation=fc_layers_act, name=f'{model_var}_cls_{i}')(x)
     if nested:
         jst_classifier = keras.Model(nested_inputs, x, name="classifier")
         x = jst_classifier(nested_inputs)
-    output = keras.layers.Dense(num_class, activation=top_activation, dtype='float32', name=f'{model_var}_output')(x)
-    model = keras.src.models.Functional(inputs, output, name=f'MMV Model {model_var}')
+    outputs = {}
+    for label_name, num_class in classes.items():
+        outputs[label_name] = keras.layers.Dense(num_class, name=label_name, activation=top_activation)(x)
+    model = keras.Model(inputs, outputs, name=name)
     return model
 
 
