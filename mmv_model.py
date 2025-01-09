@@ -366,7 +366,8 @@ def convnext_stage_and_downsampling(x: tf.Tensor, dim: int, depth: int, stage: i
                                     pretrained,
                                     depth_drop_rates=None,
                                     view='',
-                                    variant='convnext_small'
+                                    variant='convnext_small',
+                                    nested=False,
                                     ) -> tf.Tensor:
     """
     defining a ConvNeXt stage and downsampling layers
@@ -378,8 +379,10 @@ def convnext_stage_and_downsampling(x: tf.Tensor, dim: int, depth: int, stage: i
     :param depth_drop_rates: drop rate for stage depth
     :param view: view for multi-view mammography classification model
     :param variant: ConvNext variant of the pretrained weights
+    :param nested: nest the stage into an instance of Functional model
     :return: output tensor
     """
+    nested_inputs = x
     if stage == 0:
         # Normalizes inputs with ImageNet-1k mean and std.
         x = keras.layers.Normalization(
@@ -408,6 +411,9 @@ def convnext_stage_and_downsampling(x: tf.Tensor, dim: int, depth: int, stage: i
                        depth_drop_rates=depth_drop_rates,
                        name=f'{variant}_{view}_stage',
                        variant=variant)
+    if nested:
+        nested_stage = keras.Model(nested_inputs, x, name=f"stage-{stage}{view}")
+        x = nested_stage(nested_inputs)
     return x
 
 
@@ -416,7 +422,9 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
                             depth_drop_rates: np.ndarray = None,
                             fusion_block_index=0,
                             model_var='convnext_small',
+                            nested=False,
                             ) -> tf.Tensor:
+    nested_inputs = pre_fusion_x.copy()
     for view, x in pre_fusion_x.items():
         x = spatial_downsampling(x, stage, dim,
                                  pretrained=pretrained_weights,
@@ -448,6 +456,10 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
                                variant=model_var,
                                name=f'{model_var}_post-fusion_stage')
             x = keras.layers.Add(name="merge_fused_and_examined_skip")([x, x_dual_skip["CC"]])
+            if nested:
+                fusion_block = keras.Model(nested_inputs, x, name="fusion_blocks")
+                x = fusion_block(nested_inputs)
+                nested_inputs = x
             continue
         elif j > fusion_block_index:
             x = convnext_block(x, dim, stage, block=j,
@@ -455,6 +467,9 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
                                drop_path_rate=depth_drop_rates[j],
                                variant=model_var,
                                name=f'{model_var}_post-fusion_stage')
+            if nested:
+                nested_stage = keras.Model(nested_inputs, x, name=f"stage-{stage}Fused")
+                x = nested_stage(nested_inputs)
     return x
 
 
@@ -482,7 +497,8 @@ def create_model(model_var='convnext_tiny',
                  pretrained_weights=None,
                  image_size=(512, 288),
                  num_class=1,
-                 top_activation='linear'
+                 top_activation='linear',
+                 nested=False
                  ):
     """
     Create Multi-View model for mammography (MMV model) with backbone model ConvNeXt
@@ -502,24 +518,28 @@ def create_model(model_var='convnext_tiny',
                                                           pretrained_weights,
                                                           current_stage_depth_drop_rates,
                                                           variant=model_var,
-                                                          view=view)
+                                                          view=view,
+                                                          nested=nested)
             continue
         if stage == fusion_stage:
             x = multi_view_fusion_stage(x, dims[stage], depths[stage], stage,
                                         pretrained_weights,
                                         current_stage_depth_drop_rates,
                                         fusion_block_index,
-                                        model_var)
+                                        model_var,
+                                        nested=nested)
             continue
         x = convnext_stage_and_downsampling(x, dims[stage], depths[stage], stage,
                                             pretrained_weights,
                                             current_stage_depth_drop_rates,
                                             variant=model_var,
-                                            view='fused')
+                                            view='fused',
+                                            nested=nested)
     else:
         if isinstance(x, dict):   # post-fusion
             x = keras.layers.Average(name=f'{model_var}_fusion_merge')(list(x.values()))
-    x = GlobalPooling2D(pooling, name=f'{model_var}_global_pooling')(x)
+    x = GlobalPooling2D(pooling, name=f'global_pooling')(x)
+    nested_inputs = x
     LN1 = keras.layers.LayerNormalization(epsilon=1e-6, name=f'{model_var}_pre_FC_ln')
     x = LN1(x)
     if pretrained_weights:
@@ -528,18 +548,19 @@ def create_model(model_var='convnext_tiny',
             pretrained_weights['layer_normalization.beta'].numpy(),
         ])
     x = keras.layers.Dropout(drop_out_rate)(x)
-    backbone = keras.Model(inputs, x, name="mmmv_" + model_var)
-    x = backbone(inputs)
     for i in range(fc_layers_depth):
         x = keras.layers.Dense(fc_layers_dims, activation='gelu', name=f'{model_var}_cls_{i}')(x)
+    if nested:
+        jst_classifier = keras.Model(nested_inputs, x, name="classifier")
+        x = jst_classifier(nested_inputs)
     output = keras.layers.Dense(num_class, activation=top_activation, dtype='float32', name=f'{model_var}_output')(x)
-    model = keras.src.models.Functional(inputs, output, name=f'{model_var}_mammo_multi_view')
+    model = keras.src.models.Functional(inputs, output, name=f'MMV Model {model_var}')
     return model
 
 
 if __name__ == "__main__":
     print("tensorflow version", TF_VERSION)
     print("keras version", KERAS_VERSION)
-    test_model = create_model("convnext_small")
+    test_model = create_model("convnext_small", nested=True, fusion_stage=2, fc_layers_depth=4, fc_layers_dims=64, num_class=5)
     test_model.summary()
     keras.utils.plot_model(test_model, show_shapes=True, show_layer_names=True)
