@@ -524,12 +524,21 @@ def create_model(model_var='convnext_tiny',
                                                           nested=nested)
             continue
         if stage == fusion_stage:
-            x = multi_view_fusion_stage(x, dims[stage], depths[stage], stage,
-                                        pretrained_weights,
-                                        current_stage_depth_drop_rates,
-                                        fusion_block_index,
-                                        model_var,
-                                        nested=nested)
+            if fusion_stage == 0: # pre-fusion
+                x = keras.layers.Average(name='average_only_fusion')(list(x.values()))
+                x = convnext_stage_and_downsampling(x, dims[stage], depths[stage], stage,
+                                                    pretrained_weights,
+                                                    current_stage_depth_drop_rates,
+                                                    variant=model_var,
+                                                    view='fused',
+                                                    nested=nested)
+            else: # [early|middle|last]-fusion
+                x = multi_view_fusion_stage(x, dims[stage], depths[stage], stage,
+                                            pretrained_weights,
+                                            current_stage_depth_drop_rates,
+                                            fusion_block_index,
+                                            model_var,
+                                            nested=nested)
             continue
         x = convnext_stage_and_downsampling(x, dims[stage], depths[stage], stage,
                                             pretrained_weights,
@@ -539,7 +548,7 @@ def create_model(model_var='convnext_tiny',
                                             nested=nested)
     else:
         if isinstance(x, dict):   # post-fusion
-            x = keras.layers.Average(name=f'{model_var}_fusion_merge')(list(x.values()))
+            x = keras.layers.Average(name='average_only_fusion')(list(x.values()))
     x = GlobalPooling2D(pooling, name=f'global_pooling')(x)
     nested_inputs = x
     LN1 = keras.layers.LayerNormalization(epsilon=1e-6, name=f'{model_var}_pre_FC_ln')
@@ -565,6 +574,6 @@ def create_model(model_var='convnext_tiny',
 if __name__ == "__main__":
     print("tensorflow version", TF_VERSION)
     print("keras version", KERAS_VERSION)
-    test_model = create_model("convnext_small", nested=True, fusion_stage=2, fc_layers_depth=4, fc_layers_dims=64, num_class=5)
+    test_model = create_model("convnext_small", nested=True, fusion_stage=0, fc_layers_depth=4, fc_layers_dims=128)
     test_model.summary()
     keras.utils.plot_model(test_model, show_shapes=True, show_layer_names=True)
