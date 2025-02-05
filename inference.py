@@ -28,19 +28,15 @@ class ModelInference:
         elif model_path.is_dir():
             self.model: dict = {}
             self.model_list = ["k-fold ensemble"]
-            pattern = os.path.join(model_path, "*_fold-{}_*.h5")
-            self.k = len(glob.glob(pattern.format("*")))
-            for fold in range(self.k):
-                try:
-                    fold_path = glob.glob(pattern.format(fold))[0]
-                    model_name = os.path.basename(fold_path)
-                    self.print("loading", model_name)
-                    self.model[model_name] = keras.models.load_model(fold_path)
-                    self.model_list.append(model_name)
-                except IndexError as e:
-                    self.print(f"model fold {fold} not found")
+            pattern = os.path.join(model_path, "*.h5")
+            self.k = len(glob.glob(pattern))
+            for fold_path in glob.glob(pattern):
+                model_name = os.path.basename(fold_path)
+                self.print("loading", model_name)
+                self.model[model_name] = keras.models.load_model(fold_path)
+                self.model_list.append(model_name)
         else:
-            raise UserError(f"Model path should be a HDF5 file or directory. But got {str(model_path)}")
+            raise UserError(f"Model path should be a Tensorflow's .h5 model file or directory. But got {str(model_path)}")
 
     def __get_prediction(self, inputs, fold, output_size):
         if fold == "k-fold ensemble" and not isinstance(self.model, keras.Model):
@@ -50,8 +46,10 @@ class ModelInference:
                 pred = self.model[self.model_list[i + 1]].predict(inputs)
                 if isinstance(pred, dict):
                     pred = pred["birads"]
+                pred = tf.nn.softmax(pred).numpy()
                 pred_sum += pred
             prediction = pred_sum / self.k
+            return prediction
         elif isinstance(self.model, keras.Model):
             self.print("prediction of", self.model_list[0])
             prediction = self.model.predict(inputs, verbose=1)
@@ -62,23 +60,23 @@ class ModelInference:
             raise UserError("unknown fold.")
         if isinstance(prediction, dict):
             prediction = prediction["birads"]
-        return prediction
+        return tf.nn.softmax(prediction).numpy()
 
-    def inference_single(self, Examined_view: np.ndarray, Auxiliary_view: np.ndarray = None, fold: str = None):
+    def inference_single(self, CC_view: np.ndarray, MLO_view: np.ndarray = None, fold: str = None):
         """
         inference model multi view
         :param fold: number of fold {0,1,2,...,N} or "k-fold ensemble" to use every fold
-        :param Examined_view: 3D Image Array (Height:512, Width:288, Channel:3)
-        :param Auxiliary_view: 3D Image Array (Height:512, Width:288, Channel:3)
+        :param CC_view: 3D Image Array (Height:512, Width:288, Channel:3)
+        :param MLO_view: 3D Image Array (Height:512, Width:288, Channel:3)
         :return: prediction result array
         """
-        if Auxiliary_view is None:
-            Auxiliary_view = np.zeros(IMAGE_SIZE)
-        assert len(Examined_view.shape) == len(Auxiliary_view.shape) == 3, "images must be 3D Array"
-        assert Examined_view.shape == Auxiliary_view.shape == IMAGE_SIZE, "images size must be (Height:512, Width:288, Channel:3)"
+        if MLO_view is None:
+            MLO_view = np.zeros(IMAGE_SIZE)
+        assert len(CC_view.shape) == len(MLO_view.shape) == 3, "images must be 3D Array"
+        assert CC_view.shape == MLO_view.shape == IMAGE_SIZE, "images size must be (Height:512, Width:288, Channel:3)"
         inputs_dict = {
-            "Examined": np.expand_dims(Examined_view, 0),
-            "Aux": np.expand_dims(Auxiliary_view, 0),
+            "CC": np.expand_dims(CC_view, 0),
+            "MLO": np.expand_dims(MLO_view, 0),
         }
         prediction = self.__get_prediction(inputs_dict, fold, (1, 5))
         return prediction[0]
@@ -86,7 +84,7 @@ class ModelInference:
     def inference_batch(self, ds: tf.data.Dataset, fold: str = None, batch_size: int = 2):
         """
         batch inference model multi view
-        :param ds: tf.data.Dataset containing "Examined" and "Aux" images
+        :param ds: tf.data.Dataset containing "CC" and "MLO" images
         :param fold: number of fold {0,1,2,...,N} or "k-fold ensemble" to use every fold
         :param batch_size: batch size for inference
         :return:
@@ -97,12 +95,12 @@ class ModelInference:
     @staticmethod
     def check_n_prep_ds(ds: tf.data.Dataset, batch_size=2):
         unbatchSpec = tf.data.DatasetSpec({
-            "Examined": tf.TensorSpec(shape=IMAGE_SIZE, dtype=tf.float32),
-            "Aux": tf.TensorSpec(shape=IMAGE_SIZE, dtype=tf.float32),
+            "CC": tf.TensorSpec(shape=IMAGE_SIZE, dtype=tf.float32),
+            "MLO": tf.TensorSpec(shape=IMAGE_SIZE, dtype=tf.float32),
         })
         batchSpec = tf.data.DatasetSpec({
-            "Examined": tf.TensorSpec(shape=[None, *IMAGE_SIZE], dtype=tf.float32),
-            "Aux": tf.TensorSpec(shape=[None, *IMAGE_SIZE], dtype=tf.float32),
+            "CC": tf.TensorSpec(shape=[None, *IMAGE_SIZE], dtype=tf.float32),
+            "MLO": tf.TensorSpec(shape=[None, *IMAGE_SIZE], dtype=tf.float32),
         })
         if not isinstance(ds, tf.data.Dataset):
             raise UserError("ds must be a tf.data.Dataset")

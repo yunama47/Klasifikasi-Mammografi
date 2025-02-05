@@ -423,6 +423,7 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
                             fusion_block_index=0,
                             model_var='convnext_small',
                             nested=False,
+                            fusion_layer:keras.layers.Layer=None
                             ) -> tf.Tensor:
     nested_inputs = pre_fusion_x.copy()
     for view, x in pre_fusion_x.items():
@@ -449,7 +450,14 @@ def multi_view_fusion_stage(pre_fusion_x: dict, dim: int, depth: int, stage: int
                 pre_fusion_x[view] = x_dual_skip[view] = x_view
             continue
         elif j == fusion_block_index:
-            x = keras.layers.Average(name=f'{model_var}_fusion_merge')(list(pre_fusion_x.values()))
+            if fusion_layer is not None:
+                try:
+                    x = fusion_layer(list(pre_fusion_x.values()))
+                except Exception as e:
+                    warnings.warn(f"gor exception {repr(e)} when calling fusion layer, changed to Average fusion")
+                    x = keras.layers.Average(name=f'{model_var}_fusion_merge')(list(pre_fusion_x.values()))
+            else:
+                x = keras.layers.Average(name=f'{model_var}_fusion_merge')(list(pre_fusion_x.values()))
             x = convnext_block(x, dim, stage, block=j,
                                pretrained=pretrained_weights,
                                drop_path_rate=depth_drop_rates[j],
@@ -489,6 +497,7 @@ def get_inputs(image_size=(512, 288)):
 def create_model(model_var='convnext_tiny',
                  fusion_stage=3,
                  fusion_block_index=0,
+                 fusion_layer:keras.layers.Layer=None,
                  fc_layers_depth=1,
                  fc_layers_dims=512,
                  fc_layers_act="gelu",
@@ -510,6 +519,18 @@ def create_model(model_var='convnext_tiny',
     dims, depths = get_dims_depth(model_var)
     depth_drop_rates = np.linspace(0, drop_path_rate, sum(depths), dtype=float)
     blocks_passed = 0
+
+    def fusion(pre_fusion_x):
+        if fusion_layer is not None:
+            try:
+                x = fusion_layer(list(pre_fusion_x.values()))
+            except Exception as e:
+                warnings.warn(f"gor exception {repr(e)} when calling fusion layer, changed to Average fusion")
+                x = keras.layers.Average(name=f'{model_var}_fusion_layer')(list(pre_fusion_x.values()))
+        else:
+            x = keras.layers.Average(name=f'{model_var}_average_fusion')(list(pre_fusion_x.values()))
+        return x
+
     for stage in range(len(dims)):
         current_stage_depth_drop_rates = depth_drop_rates[blocks_passed:blocks_passed + depths[stage]]
         blocks_passed += depths[stage]
@@ -525,7 +546,7 @@ def create_model(model_var='convnext_tiny',
             continue
         if stage == fusion_stage:
             if fusion_stage == 0: # pre-fusion
-                x = keras.layers.Average(name='average_only_fusion')(list(x.values()))
+                x = fusion(x)
                 x = convnext_stage_and_downsampling(x, dims[stage], depths[stage], stage,
                                                     pretrained_weights,
                                                     current_stage_depth_drop_rates,
@@ -538,6 +559,7 @@ def create_model(model_var='convnext_tiny',
                                             current_stage_depth_drop_rates,
                                             fusion_block_index,
                                             model_var,
+                                            fusion_layer=fusion_layer,
                                             nested=nested)
             continue
         x = convnext_stage_and_downsampling(x, dims[stage], depths[stage], stage,
@@ -548,7 +570,7 @@ def create_model(model_var='convnext_tiny',
                                             nested=nested)
     else:
         if isinstance(x, dict):   # post-fusion
-            x = keras.layers.Average(name='average_only_fusion')(list(x.values()))
+            x = fusion(x)
     x = GlobalPooling2D(pooling, name=f'global_pooling')(x)
     nested_inputs = x
     LN1 = keras.layers.LayerNormalization(epsilon=1e-6, name=f'{model_var}_pre_FC_ln')
@@ -576,4 +598,3 @@ if __name__ == "__main__":
     print("keras version", KERAS_VERSION)
     test_model = create_model("convnext_small", nested=True, fusion_stage=0, fc_layers_depth=4, fc_layers_dims=128)
     test_model.summary()
-    keras.utils.plot_model(test_model, show_shapes=True, show_layer_names=True)

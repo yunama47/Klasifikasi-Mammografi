@@ -15,7 +15,8 @@ def set_max_pixel_tres(value):
 
 def extract_roi_otsu(data, gkernel=(5, 5), area_pct_tresh=0.004):
     """
-    copied with edit from
+    Detect ROI area with Otsu's thresholding and findContours
+    copied with edit from:
     https://github.com/dangnh0611/kaggle_rsna_breast_cancer/blob/bf30f8753c564874e1e7862bafd99b09a0471165/src/roi_det/roi_extract.py#L25
 
     :param data:
@@ -58,6 +59,7 @@ def extract_roi_otsu(data, gkernel=(5, 5), area_pct_tresh=0.004):
 
 
 def roi_cropping_image(data, area_pct_tresh=AREA_PCT_TRES):
+    """cropping breast ROI from mammography image"""
     (x0, y0, x1, y1), success = extract_roi_otsu(data, (5, 5), area_pct_tresh)
     if success:
         data = data[y0:y1, x0:x1]
@@ -65,6 +67,7 @@ def roi_cropping_image(data, area_pct_tresh=AREA_PCT_TRES):
 
 
 def pad_to_scale_ratio(img, laterality, scale, pad_value=0):
+    """pad the images to normalize the aspect ratio"""
     height, width = img.shape[:2]
     target_ratio = scale[0] / scale[1]
 
@@ -92,6 +95,7 @@ def pad_to_scale_ratio(img, laterality, scale, pad_value=0):
 
 
 def get_laterality(data: np.ndarray, lat=None):
+    """helper function to automaticaly detect breast laterality from image"""
     if lat is not None:
         return lat
     # setelah eksperimen lebih lanjut , lebih baik resize sebelum deteksi laterality
@@ -108,6 +112,7 @@ def get_laterality(data: np.ndarray, lat=None):
 
 
 def cut_far_pixels(img, laterality, manual_inspected=False):
+    """rule based cropping, cut the pixels far from breast ROI, to avoid wrong ROI detection"""
     if manual_inspected:
         return img
     _, width = img.shape[:2]
@@ -137,6 +142,7 @@ def read_dicom(path,
                voi_lut: bool = True,
                fix_monochrome: bool = True,
                ):
+    """read image data from DICOM file and normalize it"""
     dicom = pydicom.read_file(path)
     if voi_lut:
         data = apply_voi_lut(dicom.pixel_array, dicom)
@@ -159,15 +165,7 @@ def preprocess_image_single(
         lat: str=None,
 ):
     """
-
-    :param img_array:
-    :param pad_scale:
-    :param pad_value:
-    :param roi_crop:
-    :param resize:
-    :param return_misch:
-    :param lat:
-    :return:
+    preprocess mammography image for single view 
     """
     lat_before = get_laterality(img_array, lat=lat)
     # otsu roi cropping
@@ -191,6 +189,7 @@ def preprocess_image_single(
 
 def read_preprocess_single(path, voi_lut=False, fix_monochrome=False, **kwargs):
     """
+    read and preprocess pipeline mammography images for single view 
     :param path: dicom image path or image bytes io
     :param voi_lut: boolean
     :param fix_monochrome: boolean
@@ -214,6 +213,7 @@ def preprocess_images_multi_view(
         lat: str = None,
         manual_inspected: bool = False,
 ):
+    """preprocess mammography image for multi view, both view will have equal preprocessing"""
     if manual_inspected:
         assert (lat is not None), "should manual inspect laterality too"
         _, width_cc = img_cc.shape[:2]
@@ -260,6 +260,7 @@ def preprocess_images_multi_view(
 
 def read_preprocess_multi_view(path_cc, path_mlo, voi_lut=True, fix_monochrome=True, **kwargs):
     """
+    read and preprocess pipeline mammography images for multi view 
     :param path_cc: dicom image path or image bytes io for cc view
     :param path_mlo: dicom image path or image bytes io for mlo view
     :param voi_lut: boolean

@@ -1,9 +1,9 @@
-pip==24.2
+# pip==24.2
 tensorflow==2.15
 keras==2.15
+pydicom==2.4.4
 gradio
 numpy
-pydicom==2.4.4
 opencv-python
 requests
 kagglehub
