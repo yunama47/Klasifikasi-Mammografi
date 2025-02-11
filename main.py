@@ -126,9 +126,11 @@ def bilingual_content(lang):
             """
         )
     with gr.Row():
-        with gr.Column(variant='compact'):
+        
+        with gr.Column():
             image1 = gr.Image(value=BLANK, label="ipsilateral view 1", format="PNG", interactive=True, sources=[])
             image2 = gr.Image(value=BLANK, label="ipsilateral view 2", format="PNG", interactive=True, sources=[])
+
         with gr.Column():
             files_input = gr.Files(label=translation.loc[("file_upload_label", lang.value), "value"],
                                     file_types=[".dicom", ".DICOM", '.dcm'],
@@ -141,6 +143,23 @@ def bilingual_content(lang):
                         label=translation.loc[("example_label", lang.value), "value"],
                         fn=example_fn,
                         run_on_click=True)
+
+            with gr.Accordion(translation.loc[("accordion2_label", lang.value), "value"], open=True):
+                gr.Markdown(translation.loc[("accordion2_desc", lang.value), "value"])
+                apply_voi_lut = gr.Checkbox(label=translation.loc[("apply_voi_lut", lang.value), "value"], value=D.voi_lut)
+                apply_voi_lut.change(dicom_preprocessing_options('voi_lut'),
+                                        inputs=[files_input, apply_voi_lut], outputs=[tmp_image1, tmp_image2])
+                fix_monochrome = gr.Checkbox(label=translation.loc[("fix_monochrome", lang.value), "value"], value=D.fix_monochrome)
+                fix_monochrome.change(dicom_preprocessing_options('fix_monochrome'),
+                                        inputs=[files_input, fix_monochrome], outputs=[tmp_image1, tmp_image2])
+                padding = gr.Checkbox(label=translation.loc[("padding_aspect_ratio", lang.value), "value"], value=D.padding)
+                padding.change(dicom_preprocessing_options('padding'),
+                                inputs=[files_input, padding], outputs=[tmp_image1, tmp_image2])
+                roi_crop = gr.Checkbox(label=translation.loc[("breast_roi_crop", lang.value), "value"], value=D.roi_crop)
+                roi_crop.change(dicom_preprocessing_options('roi_crop'),
+                                inputs=[files_input, roi_crop], outputs=[tmp_image1, tmp_image2])
+
+        with gr.Column():
             with gr.Accordion(translation.loc[("accordion1_label", lang.value), "value"], open=True):
                 model_list = infer.get_model_list
                 gr.Markdown(
@@ -159,22 +178,7 @@ def bilingual_content(lang):
                 predict_btn.click(readable_prediction, inputs=[image1, image2, model_choice, lang], outputs=prediction_result)
                 files_input.change(lambda: default_text, outputs=prediction_result)
 
-            with gr.Accordion(translation.loc[("accordion2_label", lang.value), "value"], open=True):
-                gr.Markdown(translation.loc[("accordion2_desc", lang.value), "value"])
-                apply_voi_lut = gr.Checkbox(label=translation.loc[("apply_voi_lut", lang.value), "value"], value=D.voi_lut)
-                apply_voi_lut.change(dicom_preprocessing_options('voi_lut'),
-                                        inputs=[files_input, apply_voi_lut], outputs=[tmp_image1, tmp_image2])
-                fix_monochrome = gr.Checkbox(label=translation.loc[("fix_monochrome", lang.value), "value"], value=D.fix_monochrome)
-                fix_monochrome.change(dicom_preprocessing_options('fix_monochrome'),
-                                        inputs=[files_input, fix_monochrome], outputs=[tmp_image1, tmp_image2])
-                padding = gr.Checkbox(label=translation.loc[("padding_aspect_ratio", lang.value), "value"], value=D.padding)
-                padding.change(dicom_preprocessing_options('padding'),
-                                inputs=[files_input, padding], outputs=[tmp_image1, tmp_image2])
-                roi_crop = gr.Checkbox(label=translation.loc[("breast_roi_crop", lang.value), "value"], value=D.roi_crop)
-                roi_crop.change(dicom_preprocessing_options('roi_crop'),
-                                inputs=[files_input, roi_crop], outputs=[tmp_image1, tmp_image2])
-
-            with gr.Accordion(translation.loc[("accordion3_label", lang.value), "value"], open=False):
+            with gr.Accordion(translation.loc[("accordion3_label", lang.value), "value"], open=True):
                 gr.Markdown(translation.loc[("accordion3_desc", lang.value), "value"])
                 slider_ct = gr.Slider(minimum=0, maximum=3,
                                         value=A.contrast_factor, label=translation.loc[("contrast", lang.value), "value"])
