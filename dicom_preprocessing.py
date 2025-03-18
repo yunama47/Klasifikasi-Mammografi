@@ -58,19 +58,24 @@ def extract_roi_otsu(data, gkernel=(5, 5), area_pct_tresh=0.004):
     return [x0, y0, x1, y1], True
 
 
-def roi_cropping_image(data, area_pct_tresh=AREA_PCT_TRES):
+def roi_cropping_image(data, ori_bbox, area_pct_tresh=AREA_PCT_TRES):
     """cropping breast ROI from mammography image"""
     (x0, y0, x1, y1), success = extract_roi_otsu(data, (5, 5), area_pct_tresh)
+    ori_x0, ori_y0, ori_x1, ori_y1 = ori_bbox
+    
     if success:
         data = data[y0:y1, x0:x1]
-    return data, success
+        roi_bbox = [ori_x0 + x0, ori_y0 + y0, 
+                    ori_x0 + x1, ori_y0 + y1]
+        return data, success, roi_bbox
+    return data, success, ori_bbox
 
 
-def pad_to_scale_ratio(img, laterality, scale, pad_value=0):
+def pad_to_scale_ratio(img,ori_bbox, laterality, scale, pad_value=0):
     """pad the images to normalize the aspect ratio"""
     height, width = img.shape[:2]
+    ori_x0, ori_y0, ori_x1, ori_y1 = ori_bbox
     target_ratio = scale[0] / scale[1]
-
     if width / height > target_ratio:  # Image is wider than 9:16
         new_width = width
         new_height = int(width / target_ratio)
@@ -90,8 +95,9 @@ def pad_to_scale_ratio(img, laterality, scale, pad_value=0):
 
     # Copy the original image onto the padded image with the calculated offsets
     padded_img[top_bottom_padding:top_bottom_padding + height, left_right_padding:left_right_padding + width] = img
-
-    return padded_img
+    # roi_bbox = [ori_x0 - left_right_padding, ori_y0 - top_bottom_padding,
+    #             ori_x0 + width - left_right_padding, ori_y0 + height - top_bottom_padding]
+    return padded_img, ori_bbox
 
 
 def get_laterality(data: np.ndarray, lat=None):
@@ -111,10 +117,11 @@ def get_laterality(data: np.ndarray, lat=None):
     return laterality
 
 
-def cut_far_pixels(img, laterality, manual_inspected=False):
+def cut_far_pixels(img, laterality, roi_bbox, manual_inspected=False):
     """rule based cropping, cut the pixels far from breast ROI, to avoid wrong ROI detection"""
+    xmin, ymin, xmax, ymax = roi_bbox
     if manual_inspected:
-        return img
+        return img, roi_bbox
     _, width = img.shape[:2]
     cut = None
     for c in np.arange(0.5, 0.1, -0.01):
@@ -132,11 +139,14 @@ def cut_far_pixels(img, laterality, manual_inspected=False):
             cut = width - far_cuts
             break
     if laterality == "L":
-        return img[:, :cut]
+        cut_bbox = cut or 0
+        return img[:, :cut], [xmin, ymin, xmax-cut_bbox,ymax]
     elif laterality == "R":
-        return img[:, -(cut or 0):]
+        cut = cut or 999999999999999
+        cut_bbox = max(width - cut, 0)
+        return img[:, -cut:], [xmin+cut_bbox, ymin, xmax, ymax]
     else:
-        return img
+        return img, [xmin, ymin, xmax, ymax]
 
 def read_dicom(path,
                voi_lut: bool = True,
@@ -203,60 +213,88 @@ def read_preprocess_single(path, voi_lut=False, fix_monochrome=False, **kwargs):
     data = read_dicom(path, voi_lut=voi_lut, fix_monochrome=fix_monochrome)
     return preprocess_image_single(data, **kwargs)
 
+def normalize_bbox(bbox, width, height):
+    """normalize bbox to 0-1"""
+    x0, y0, x1, y1 = bbox
+    x1 = min(x1, width)
+    y1 = min(y1, height)
+    return [x0 / width, y0 / height, x1 / width, y1 / height]
+
 def preprocess_images_multi_view(
         img_cc: np.ndarray, img_mlo: np.ndarray,
-        pad_scale: tuple = (1, 1),
+        pad_scale: tuple = None,
         pad_value: int = 0,
         roi_crop: str = None,
-        resize: tuple | list = (288, 512),
-        return_misch: bool = False,
+        resize: tuple | list = None,
         lat: str = None,
         manual_inspected: bool = False,
+        return_misch: bool = False,
+        return_image: bool = True,
+        return_bbox: bool = False,
 ):
     """preprocess mammography image for multi view, both view will have equal preprocessing"""
+    height_cc, width_cc = img_cc.shape[:2]
+    height_mlo, width_mlo = img_mlo.shape[:2]
+    # xmin, ymin, xmax, ymax
+    roi_bbox_cc = [0,0, width_cc, height_cc]
+    roi_bbox_mlo = [0,0, width_mlo, height_mlo]
     if manual_inspected:
         assert (lat is not None), "should manual inspect laterality too"
-        _, width_cc = img_cc.shape[:2]
-        _, width_mlo = img_mlo.shape[:2]
         cut_cc = int(0.5 * width_cc)
         cut_mlo = int(0.5 * width_mlo)
         if lat == "R":
             img_cc = img_cc[:, -cut_cc:]
             img_mlo = img_mlo[:, -cut_mlo:]
+            roi_bbox_cc = [width_cc - cut_cc, 0, width_cc, height_cc]
+            roi_bbox_mlo = [width_mlo - cut_mlo, 0, width_mlo, height_mlo]
         elif lat == "L":
             img_cc = img_cc[:, :cut_cc]
             img_mlo = img_mlo[:, :cut_mlo]
+            roi_bbox_cc = [0, 0, cut_cc, height_cc]
+            roi_bbox_mlo = [0, 0, cut_mlo, height_mlo]
     cc_lat_before = get_laterality(img_cc, lat=lat)
     mlo_lat_before = get_laterality(img_mlo, lat=lat)
     # otsu roi cropping
     if roi_crop == 'otsu':
-        img_cc_crop = cut_far_pixels(img_cc, cc_lat_before, manual_inspected=manual_inspected)
-        img_mlo_crop = cut_far_pixels(img_mlo, mlo_lat_before, manual_inspected=manual_inspected)
-        img_cc_crop, cc_success = roi_cropping_image(img_cc_crop)
-        img_mlo_crop, mlo_success = roi_cropping_image(img_mlo_crop)
+        img_cc_crop, roi_crop_bbox_cc = cut_far_pixels(img_cc, cc_lat_before, roi_bbox_cc, manual_inspected=manual_inspected)
+        img_mlo_crop, roi_crop_bbox_mlo = cut_far_pixels(img_mlo, mlo_lat_before, roi_bbox_mlo, manual_inspected=manual_inspected)
+        img_cc_crop, cc_success, roi_crop_bbox_cc = roi_cropping_image(img_cc_crop, roi_crop_bbox_cc)
+        img_mlo_crop, mlo_success, roi_crop_bbox_mlo = roi_cropping_image(img_mlo_crop, roi_crop_bbox_mlo)
         if cc_success and mlo_success:
             img_cc = img_cc_crop
             img_mlo = img_mlo_crop
+            roi_bbox_cc = roi_crop_bbox_cc
+            roi_bbox_mlo = roi_crop_bbox_mlo
     elif roi_crop is not None:
-        img_cc = cut_far_pixels(img_cc, cc_lat_before, manual_inspected=manual_inspected)
-        img_mlo = cut_far_pixels(img_mlo, mlo_lat_before, manual_inspected=manual_inspected)
+        img_cc, roi_bbox_cc = cut_far_pixels(img_cc, cc_lat_before, roi_bbox_cc, manual_inspected=manual_inspected)
+        img_mlo, roi_bbox_mlo = cut_far_pixels(img_mlo, mlo_lat_before, roi_bbox_mlo, manual_inspected=manual_inspected)
+
+    roi_bbox_cc = normalize_bbox(roi_bbox_cc, width_cc, height_cc)
+    roi_bbox_mlo = normalize_bbox(roi_bbox_mlo, width_mlo, height_mlo)
+
     # padding
     if pad_scale is not None:
-        img_cc = pad_to_scale_ratio(img_cc, get_laterality(img_cc, lat=lat), pad_scale, pad_value)
-        img_mlo = pad_to_scale_ratio(img_mlo, get_laterality(img_mlo, lat=lat), pad_scale, pad_value)
+        img_cc, roi_bbox_cc = pad_to_scale_ratio(img_cc, roi_bbox_cc, get_laterality(img_cc, lat=lat), pad_scale, pad_value)
+        img_mlo, roi_bbox_mlo = pad_to_scale_ratio(img_mlo, roi_bbox_mlo, get_laterality(img_mlo, lat=lat), pad_scale, pad_value)
     # resize
     if resize is not None:
         img_cc = cv2.resize(img_cc, resize, interpolation=cv2.INTER_LINEAR)
         img_mlo = cv2.resize(img_mlo, resize, interpolation=cv2.INTER_LINEAR)
+    
+
     pct75_cc = np.percentile(img_cc, 75)
     pct75_mlo = np.percentile(img_mlo, 75)
     cc_lat_after = get_laterality(img_cc)
     mlo_lat_after = get_laterality(img_mlo)
-    if return_misch:
-        return (img_cc, img_mlo), (pct75_cc, pct75_mlo), (cc_lat_before, mlo_lat_before), (cc_lat_after, mlo_lat_after)
-    else:
-        return img_cc, img_mlo
 
+    return_values = []
+    if return_image:
+        return_values.append((img_cc, img_mlo))
+    if return_misch:
+        return_values.extend([(pct75_cc, pct75_mlo), (cc_lat_before, mlo_lat_before), (cc_lat_after, mlo_lat_after)])
+    if return_bbox:
+        return_values.append((roi_bbox_cc, roi_bbox_mlo))
+    return return_values
 
 def read_preprocess_multi_view(path_cc, path_mlo, voi_lut=True, fix_monochrome=True, **kwargs):
     """
@@ -310,7 +348,7 @@ class PreprocessingDICOM:
                 pad_value=self.pad_value
             )
             return [image, BLANK]
-        image1, image2 = read_preprocess_multi_view(
+        [(image1, image2)] = read_preprocess_multi_view(
             list_filepath[0], list_filepath[1],
             voi_lut=self.voi_lut,
             fix_monochrome=self.fix_monochrome,
