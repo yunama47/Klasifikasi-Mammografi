@@ -72,7 +72,7 @@ def readable_prediction(im1, im2, model_fold, lang):
         prediction_texts = f'''<h2>Prediction :</h2>
         <h2>BI-RADS Category : {result[0]} ({result[1]:.3f}%)</h2>
         <h2>Recommended Action : {action_result[0]} ({action_result[1]:.3f}%)</h2>
-        <p>The prediction result is that our model has a confidence of <strong>{result[1]:.3f}%</strong> that this mammography case belongs to <strong>BI-RADS {result[0]}</strong>. This means the case is {birads_interpretation[result[0]]}. Meanwhile, our model predicts that the recommended action is {action_result[0]}.</p>
+        <p>The prediction result is that the model has a confidence of <strong>{result[1]:.3f}%</strong> that this mammography case belongs to <strong>BI-RADS {result[0]}</strong>. This means the case is {birads_interpretation[result[0]]}. Meanwhile, the model predicts that the recommended action is {action_result[0]}.</p>
         <p>All BI-RADS probability predictions:</p>
         '''
     elif lang=='id':
@@ -89,7 +89,7 @@ def readable_prediction(im1, im2, model_fold, lang):
         prediction_texts = f'''<h2>Prediksi :</h2>
         <h2>Kategori BI-RADS : {result[0]} ({result[1]:.3f}%)</h2>
         <h2>Rekomendasi Aksi : {action_result[0]} ({action_result[1]:.3f}%)</h2>
-        <p>Hasil prediksi adalah bahwa model kami memiliki kepercayaan <strong>{result[1]:.3f}%</strong> bahwa kasus mamografi ini tergolong <strong>BI-RADS {result[0]}</strong>. Yang berarti kasus tersebut adalah {birads_interpretation[result[0]]}. Sementara itu, model kami memprediksi bahwa tindakan yang direkomendasikan adalah {action_result[0]}.</p>
+        <p>Hasil prediksi adalah bahwa model ini memiliki kepercayaan <strong>{result[1]:.3f}%</strong> bahwa kasus mamografi ini tergolong <strong>BI-RADS {result[0]}</strong>. Yang berarti kasus tersebut adalah {birads_interpretation[result[0]]}. Sementara itu, model ini memprediksi bahwa tindakan yang direkomendasikan adalah {action_result[0]}.</p>
         <p>Semua prediksi probabilitas BI-RADS:</p>
         '''
     else:
@@ -132,7 +132,7 @@ def bilingual_content(lang):
             image2 = gr.Image(value=BLANK, label="ipsilateral view 2", format="PNG", interactive=True, sources=[])
 
         with gr.Column():
-            files_input = gr.Files(label=translation.loc[("file_upload_label", lang.value), "value"],
+            files_input = gr.Files(label=str(translation.loc[("file_upload_label", lang.value), "value"]),
                                     file_types=[".dicom", ".DICOM", '.dcm'],
                                     type='filepath')
             examples = [[os.path.basename(path) for path in glob.glob(f"{example_dicom_dir}/*_{birads}_*.dicom")[:2]] for
@@ -140,31 +140,31 @@ def bilingual_content(lang):
             gr.Examples(examples,
                         inputs=[tmp_texbox1, tmp_texbox2],
                         outputs=files_input,
-                        label=translation.loc[("example_label", lang.value), "value"],
+                        label=str(translation.loc[("example_label", lang.value), "value"]),
                         fn=example_fn,
                         run_on_click=True)
 
-            with gr.Accordion(translation.loc[("accordion2_label", lang.value), "value"], open=True):
-                gr.Markdown(translation.loc[("accordion2_desc", lang.value), "value"])
-                apply_voi_lut = gr.Checkbox(label=translation.loc[("apply_voi_lut", lang.value), "value"], value=D.voi_lut)
+            with gr.Accordion(str(translation.loc[("accordion2_label", lang.value), "value"]), open=True):
+                gr.Markdown(str(translation.loc[("accordion2_desc", lang.value), "value"]))
+                apply_voi_lut = gr.Checkbox(label=str(translation.loc[("apply_voi_lut", lang.value), "value"]), value=D.voi_lut)
                 apply_voi_lut.change(dicom_preprocessing_options('voi_lut'),
                                         inputs=[files_input, apply_voi_lut], outputs=[tmp_image1, tmp_image2])
-                fix_monochrome = gr.Checkbox(label=translation.loc[("fix_monochrome", lang.value), "value"], value=D.fix_monochrome)
+                fix_monochrome = gr.Checkbox(label=str(translation.loc[("fix_monochrome", lang.value), "value"]), value=D.fix_monochrome)
                 fix_monochrome.change(dicom_preprocessing_options('fix_monochrome'),
                                         inputs=[files_input, fix_monochrome], outputs=[tmp_image1, tmp_image2])
-                padding = gr.Checkbox(label=translation.loc[("padding_aspect_ratio", lang.value), "value"], value=D.padding)
+                padding = gr.Checkbox(label=str(translation.loc[("padding_aspect_ratio", lang.value), "value"]), value=D.padding)
                 padding.change(dicom_preprocessing_options('padding'),
                                 inputs=[files_input, padding], outputs=[tmp_image1, tmp_image2])
-                roi_crop = gr.Checkbox(label=translation.loc[("breast_roi_crop", lang.value), "value"], value=D.roi_crop)
+                roi_crop = gr.Checkbox(label=str(translation.loc[("breast_roi_crop", lang.value), "value"]), value=D.roi_crop)
                 roi_crop.change(dicom_preprocessing_options('roi_crop'),
                                 inputs=[files_input, roi_crop], outputs=[tmp_image1, tmp_image2])
 
         with gr.Column():
-            with gr.Accordion(translation.loc[("accordion1_label", lang.value), "value"], open=True):
-                model_list = infer.get_model_list
+            with gr.Accordion(str(translation.loc[("accordion1_label", lang.value), "value"]), open=True):
+                model_list = infer.get_model_list or ["error : no model found"]
                 gr.Markdown(
                     f"""
-                    > {translation.loc[("accordion1_desc", lang.value), "value"]}
+                    > {str(translation.loc[("accordion1_desc", lang.value), "value"])}
                     """
                 )
                 model_choice = gr.Dropdown(model_list, label="change model", value=model_list[0])
@@ -178,17 +178,19 @@ def bilingual_content(lang):
                 predict_btn.click(readable_prediction, inputs=[image1, image2, model_choice, lang], outputs=prediction_result)
                 files_input.change(lambda: default_text, outputs=prediction_result)
 
-            with gr.Accordion(translation.loc[("accordion3_label", lang.value), "value"], open=True):
-                gr.Markdown(translation.loc[("accordion3_desc", lang.value), "value"])
+            with gr.Accordion(str(translation.loc[("accordion3_label", lang.value), "value"]), open=True):
+                gr.Markdown(str(translation.loc[("accordion3_desc", lang.value), "value"]))
                 slider_ct = gr.Slider(minimum=0, maximum=3,
-                                        value=A.contrast_factor, label=translation.loc[("contrast", lang.value), "value"])
+                                        value=A.contrast_factor, label=str(translation.loc[("contrast", lang.value), "value"]))
                 slider_ct.change(images_adjustment_options("contrast_factor"),
                                     inputs=[tmp_image1, tmp_image2, slider_ct], outputs=[image1, image2])
                 slider_br = gr.Slider(minimum=-200, maximum=200,
-                                        value=A.brightness_factor, label=translation.loc[("brightness", lang.value), "value"])
+                                        value=A.brightness_factor, label=str(translation.loc[("brightness", lang.value), "value"]))
                 slider_br.change(images_adjustment_options("brightness_factor"),
                                     inputs=[tmp_image1, tmp_image2, slider_br], outputs=[image1, image2])
-                reset = gr.Button(translation.loc[("reset_adjustment", lang.value), "value"], size='sm')
+                swap = gr.Button(str(translation.loc[("swap_image", lang.value), "value"]), size='sm')
+                swap.click(lambda x, y: (y, x), inputs=[image1, image2], outputs=[image1, image2])
+                reset = gr.Button(str(translation.loc[("reset_adjustment", lang.value), "value"]), size='sm')
                 reset.click(lambda: (1, 0), outputs=[slider_ct, slider_br])
 
 with gr.Blocks() as demo:
@@ -198,13 +200,14 @@ with gr.Blocks() as demo:
         tmp_texbox1 = gr.Textbox()
         tmp_texbox2 = gr.Textbox()
 
+    with gr.Tab("bahasa indonesia".capitalize()):
+        lang = gr.Textbox("id",visible=False)
+        bilingual_content(lang)
+        
     with gr.Tab("english".capitalize()):
         lang = gr.Textbox("en",visible=False)
         bilingual_content(lang)
 
-    with gr.Tab("bahasa indonesia".capitalize()):
-        lang = gr.Textbox("id",visible=False)
-        bilingual_content(lang)
 
 if __name__ == "__main__":
     demo.launch()
