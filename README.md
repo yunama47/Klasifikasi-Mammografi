@@ -7,8 +7,13 @@ colorFrom: red
 colorTo: green
 short_description: Mammography Images Classification
 app_file: main.py
-sdk_version: 4.42.0
+sdk_version: 5.31.0
 ---
 
-## Mammography image classification Project
-> by Gede Wahyu Purnama
+## KLASIFIKASI GAMBAR CITRA MEDIS MAMOGRAFI BERBASIS CONVOLUTIONAL NEURAL NETWORKS (CNNs) DENGAN ARSITEKTUR MODEL MULTI-VIEW
+> Oleh : <br>
+> Gede Wahyu Purnama <br>
+> NIM 2015101014 <br>
+> Prodi Ilmu Komputer Jurusan Teknik Informatika <br>
+> Fakultas Teknik dan Kejuruan <br>
+> Universitass Pendidikan Ganesha <br>

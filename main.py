@@ -194,11 +194,11 @@ def bilingual_content(lang):
                 reset.click(lambda: (1, 0), outputs=[slider_ct, slider_br])
 
 with gr.Blocks() as demo:
-    with gr.Tab("temp", visible=False):
-        tmp_image1 = gr.Image(value=BLANK, format="PNG", visible=False)
-        tmp_image2 = gr.Image(value=BLANK, format="PNG", visible=False)
-        tmp_texbox1 = gr.Textbox()
-        tmp_texbox2 = gr.Textbox()
+
+    tmp_image1 = gr.Image(value=BLANK, format="PNG", visible=False)
+    tmp_image2 = gr.Image(value=BLANK, format="PNG", visible=False)
+    tmp_texbox1 = gr.Textbox(visible=False)
+    tmp_texbox2 = gr.Textbox(visible=False)
 
     with gr.Tab("bahasa indonesia".capitalize()):
         lang = gr.Textbox("id",visible=False)
