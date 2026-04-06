@@ -23,6 +23,13 @@ download_example_dicom()
 example_dicom_dir = "example_dicom"
 print(" Preparation Finished ".center(50, "="))
 
+def remove_prev_files(new_files,  prev_files):
+    if prev_files:
+        print(f"deleting past files :\n {prev_files}")
+        for file in prev_files:
+            os.unlink(file)
+    return new_files
+
 def dicom_preprocessing_options(option:str):
     assert option in list(vars(D).keys()), gr.Error("invalid option")
 
@@ -126,12 +133,11 @@ def bilingual_content(lang):
             """
         )
     with gr.Row():
-        
         with gr.Column():
             image1 = gr.Image(value=BLANK, label="ipsilateral view 1", format="PNG", interactive=True, sources=[])
             image2 = gr.Image(value=BLANK, label="ipsilateral view 2", format="PNG", interactive=True, sources=[])
-
         with gr.Column():
+            prev_files = gr.State(None)
             files_input = gr.Files(label=str(translation.loc[("file_upload_label", lang.value), "value"]),
                                     file_types=[".dicom", ".DICOM", '.dcm'],
                                     type='filepath')
@@ -143,22 +149,12 @@ def bilingual_content(lang):
                         label=str(translation.loc[("example_label", lang.value), "value"]),
                         fn=example_fn,
                         run_on_click=True)
-
             with gr.Accordion(str(translation.loc[("accordion2_label", lang.value), "value"]), open=True):
                 gr.Markdown(str(translation.loc[("accordion2_desc", lang.value), "value"]))
                 apply_voi_lut = gr.Checkbox(label=str(translation.loc[("apply_voi_lut", lang.value), "value"]), value=D.voi_lut)
-                apply_voi_lut.change(dicom_preprocessing_options('voi_lut'),
-                                        inputs=[files_input, apply_voi_lut], outputs=[tmp_image1, tmp_image2])
                 fix_monochrome = gr.Checkbox(label=str(translation.loc[("fix_monochrome", lang.value), "value"]), value=D.fix_monochrome)
-                fix_monochrome.change(dicom_preprocessing_options('fix_monochrome'),
-                                        inputs=[files_input, fix_monochrome], outputs=[tmp_image1, tmp_image2])
                 padding = gr.Checkbox(label=str(translation.loc[("padding_aspect_ratio", lang.value), "value"]), value=D.padding)
-                padding.change(dicom_preprocessing_options('padding'),
-                                inputs=[files_input, padding], outputs=[tmp_image1, tmp_image2])
                 roi_crop = gr.Checkbox(label=str(translation.loc[("breast_roi_crop", lang.value), "value"]), value=D.roi_crop)
-                roi_crop.change(dicom_preprocessing_options('roi_crop'),
-                                inputs=[files_input, roi_crop], outputs=[tmp_image1, tmp_image2])
-
         with gr.Column():
             with gr.Accordion(str(translation.loc[("accordion1_label", lang.value), "value"]), open=True):
                 model_list = infer.get_model_list or ["error : no model found"]
@@ -169,31 +165,45 @@ def bilingual_content(lang):
                 )
                 model_choice = gr.Dropdown(model_list, label="change model", value=model_list[0])
                 predict_btn = gr.Button("Predict", variant="primary")
-                files_input.change(D.process_dicom_files, inputs=files_input, outputs=[tmp_image1, tmp_image2])
-                tmp_image1.change(A.adjust_contrast_brightness, inputs=tmp_image1, outputs=image1)
-                tmp_image2.change(A.adjust_contrast_brightness, inputs=tmp_image2, outputs=image2)
 
                 default_text = f"<p>{translation.loc[('predict_result_devault', lang.value), 'value']}</p>"
                 prediction_result = gr.HTML(default_text)
-                predict_btn.click(readable_prediction, inputs=[image1, image2, model_choice, lang], outputs=prediction_result)
-                files_input.change(lambda: default_text, outputs=prediction_result)
-
             with gr.Accordion(str(translation.loc[("accordion3_label", lang.value), "value"]), open=True):
                 gr.Markdown(str(translation.loc[("accordion3_desc", lang.value), "value"]))
                 slider_ct = gr.Slider(minimum=0, maximum=3,
                                         value=A.contrast_factor, label=str(translation.loc[("contrast", lang.value), "value"]))
-                slider_ct.change(images_adjustment_options("contrast_factor"),
-                                    inputs=[tmp_image1, tmp_image2, slider_ct], outputs=[image1, image2])
                 slider_br = gr.Slider(minimum=-200, maximum=200,
                                         value=A.brightness_factor, label=str(translation.loc[("brightness", lang.value), "value"]))
-                slider_br.change(images_adjustment_options("brightness_factor"),
-                                    inputs=[tmp_image1, tmp_image2, slider_br], outputs=[image1, image2])
                 swap = gr.Button(str(translation.loc[("swap_image", lang.value), "value"]), size='sm')
-                swap.click(lambda x, y: (y, x), inputs=[image1, image2], outputs=[image1, image2])
                 reset = gr.Button(str(translation.loc[("reset_adjustment", lang.value), "value"]), size='sm')
-                reset.click(lambda: (1, 0), outputs=[slider_ct, slider_br])
 
-with gr.Blocks() as demo:
+# ==== All Event listeners here ====== 
+    files_input.change(D.process_dicom_files, inputs=files_input, outputs=[tmp_image1, tmp_image2])
+    files_input.clear(lambda: default_text, outputs=prediction_result)
+    files_input.upload(remove_prev_files, inputs=[files_input, prev_files], outputs=prev_files)
+
+    apply_voi_lut.change(dicom_preprocessing_options('voi_lut'),
+                        inputs=[files_input, apply_voi_lut], outputs=[tmp_image1, tmp_image2])
+    fix_monochrome.change(dicom_preprocessing_options('fix_monochrome'),
+                        inputs=[files_input, fix_monochrome], outputs=[tmp_image1, tmp_image2])
+    padding.change(dicom_preprocessing_options('padding'),
+                    inputs=[files_input, padding], outputs=[tmp_image1, tmp_image2])
+    roi_crop.change(dicom_preprocessing_options('roi_crop'),
+                    inputs=[files_input, roi_crop], outputs=[tmp_image1, tmp_image2])
+    
+    tmp_image1.change(A.adjust_contrast_brightness, inputs=tmp_image1, outputs=image1)
+    tmp_image2.change(A.adjust_contrast_brightness, inputs=tmp_image2, outputs=image2)
+
+    predict_btn.click(readable_prediction, inputs=[image1, image2, model_choice, lang], outputs=prediction_result)
+
+    slider_ct.change(images_adjustment_options("contrast_factor"),
+                        inputs=[tmp_image1, tmp_image2, slider_ct], outputs=[image1, image2])
+    slider_br.change(images_adjustment_options("brightness_factor"),
+                        inputs=[tmp_image1, tmp_image2, slider_br], outputs=[image1, image2])
+    swap.click(lambda x, y: (y, x), inputs=[image1, image2], outputs=[image1, image2])
+    reset.click(lambda: (1, 0), outputs=[slider_ct, slider_br])
+
+with gr.Blocks(delete_cache=(24*60*60, 24*60*60)) as demo:
 
     tmp_image1 = gr.Image(value=BLANK, format="PNG", visible=False)
     tmp_image2 = gr.Image(value=BLANK, format="PNG", visible=False)
